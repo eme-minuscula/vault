@@ -3,10 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { App } from './App';
 
 describe('App', () => {
-  it('renders the app shell heading', () => {
+  it('shows onboarding when no token is configured', () => {
     render(<App />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
-      'Your knowledge, one clean surface.',
-    );
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Connect your vault');
   });
 });

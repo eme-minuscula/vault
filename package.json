@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "dexie": "^4.0.11",
+    "dexie-react-hooks": "^1.1.7",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.1.5",
@@ -35,6 +36,7 @@
     "eslint": "^9.20.0",
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.18",
+    "fake-indexeddb": "^6.0.0",
     "globals": "^15.14.0",
     "jsdom": "^26.0.0",
     "prettier": "^3.5.0",
