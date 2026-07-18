@@ -117,7 +117,9 @@ function unquote(s: string): string {
  * itself, so a body that opens with `# Same Title` would show it twice.
  */
 export function stripLeadingH1(body: string): string {
-  const m = /^\s*# [^\n]*(?:\r?\n|$)/.exec(body);
+  // `#[ \t]+` mirrors firstHeading's `#\s+` so the title we picked and the line
+  // we strip agree even when a tab follows the hash.
+  const m = /^\s*#[ \t]+[^\n]*(?:\r?\n|$)/.exec(body);
   if (!m) return body;
   return body.slice(m[0].length).replace(/^\r?\n+/, '');
 }

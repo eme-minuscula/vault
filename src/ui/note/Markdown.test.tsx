@@ -25,6 +25,23 @@ describe('Markdown security', () => {
     expect(img?.getAttribute('onerror')).toBeNull();
     expect(container.innerHTML).not.toContain('javascript:');
   });
+
+  it('neutralizes a javascript: text link href', () => {
+    const { container } = render(
+      <Markdown body={'[click me](javascript:alert(1))'} resolve={() => null} />,
+    );
+    const anchor = container.querySelector('a');
+    expect(anchor?.getAttribute('href') ?? '').not.toContain('javascript:');
+  });
+
+  it('neutralizes a data: html link href', () => {
+    const { container } = render(
+      <Markdown body={'[x](data:text/html,<script>alert(1)</script>)'} resolve={() => null} />,
+    );
+    const anchor = container.querySelector('a');
+    const href = anchor?.getAttribute('href') ?? '';
+    expect(href).not.toContain('data:text/html');
+  });
 });
 
 describe('Markdown wikilinks', () => {

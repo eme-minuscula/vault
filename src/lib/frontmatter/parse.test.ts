@@ -68,6 +68,8 @@ describe('parseNote', () => {
     // Leaves non-leading headings and H2s alone.
     expect(stripLeadingH1('intro\n\n# Later')).toBe('intro\n\n# Later');
     expect(stripLeadingH1('## Sub\n\nbody')).toBe('## Sub\n\nbody');
+    // Tab after the hash is handled the same as a space.
+    expect(stripLeadingH1('#\tTitle\n\nbody')).toBe('body');
   });
 
   it('builds a trimmed snippet from the body', () => {

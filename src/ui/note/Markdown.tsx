@@ -52,6 +52,11 @@ function Anchor({ href, children, ...rest }: ComponentPropsWithoutRef<'a'>) {
     );
   }
 
+  // In-page fragment links (e.g. [jump](#section)) stay in the current view.
+  if (href.startsWith('#')) {
+    return <a href={href}>{children}</a>;
+  }
+
   return (
     <a href={href} target="_blank" rel="noreferrer noopener" {...rest}>
       {children}
