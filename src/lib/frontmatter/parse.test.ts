@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseNote } from './parse';
+import { parseNote, stripLeadingH1 } from './parse';
 
 describe('parseNote', () => {
   it('parses inline tags, type, active and date', () => {
@@ -60,6 +60,14 @@ describe('parseNote', () => {
     expect(p.frontmatter.type).toBe('daily');
     expect(p.frontmatter.active).toBe(false);
     expect(p.frontmatter.date).toBe('2026-01-01');
+  });
+
+  it('stripLeadingH1 removes only a leading H1, once', () => {
+    expect(stripLeadingH1('# Title\n\nbody')).toBe('body');
+    expect(stripLeadingH1('\n\n# Title\nmore')).toBe('more');
+    // Leaves non-leading headings and H2s alone.
+    expect(stripLeadingH1('intro\n\n# Later')).toBe('intro\n\n# Later');
+    expect(stripLeadingH1('## Sub\n\nbody')).toBe('## Sub\n\nbody');
   });
 
   it('builds a trimmed snippet from the body', () => {
