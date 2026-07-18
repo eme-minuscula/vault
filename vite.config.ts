@@ -1,8 +1,45 @@
 /// <reference types="vitest/config" />
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+
+// Content-Security-Policy, injected only into the production build. GitHub Pages
+// can't set HTTP headers, so a <meta> CSP is the only lever. It is deliberately
+// strict: the app loads only its own same-origin assets and talks only to the
+// GitHub API. This is the primary defense for the runtime PAT and for rendering
+// untrusted note content. It is NOT applied in dev (Vite needs inline/eval/ws).
+//
+// - style-src allows 'unsafe-inline' because Tailwind/React emit inline styles;
+//   inline *scripts* remain forbidden, which is what matters for XSS.
+// - img-src allows data: so note images fetched as base64 can render inline.
+const CSP = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-src 'none'",
+  "img-src 'self' data: blob:",
+  "font-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "script-src 'self'",
+  "connect-src 'self' https://api.github.com",
+  "manifest-src 'self'",
+  "worker-src 'self'",
+  "form-action 'none'",
+].join('; ');
+
+function cspPlugin(): Plugin {
+  return {
+    name: 'vault-csp',
+    apply: 'build',
+    transformIndexHtml(html) {
+      return html.replace(
+        '</title>',
+        `</title>\n    <meta http-equiv="Content-Security-Policy" content="${CSP}" />`,
+      );
+    },
+  };
+}
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => {
@@ -16,6 +53,7 @@ export default defineConfig(({ command }) => {
     plugins: [
       react(),
       tailwindcss(),
+      cspPlugin(),
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: ['favicon.svg'],

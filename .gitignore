@@ -25,3 +25,4 @@ dev-dist
 
 # Local, machine-specific Claude Code settings (permissions allowlist etc.)
 .claude/settings.local.json
+dist-preview

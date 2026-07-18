@@ -1,24 +1,29 @@
+import { useEffect } from 'react';
+import { useSettings } from './state/settings';
+import { useSync } from './state/sync';
+import { Onboarding } from './ui/Onboarding';
+import { Home } from './ui/Home';
+
 /**
- * App shell.
- *
- * This is the M0 foundation placeholder: it establishes the layout, theme, and
- * design language that later milestones build on (data layer, navigation, search,
- * editing). It intentionally ships nothing that touches the GitHub API yet.
+ * App shell (M1). Routes between first-run onboarding and the synced home based
+ * on whether a token is configured. Real in-app navigation lands in M2.
  */
 export function App() {
+  const configured = useSettings((s) => s.configured);
+  const hasToken = useSettings((s) => s.token.length > 0);
+  const run = useSync((s) => s.run);
+
+  const connected = configured && hasToken;
+
+  // On load, if already connected, quietly check GitHub for changes (a cheap
+  // conditional request — 304 when nothing changed).
+  useEffect(() => {
+    if (connected) void run();
+  }, [connected, run]);
+
   return (
     <div className="min-h-full bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
-      <main className="mx-auto flex min-h-full max-w-2xl flex-col justify-center px-6 py-16">
-        <p className="text-sm font-medium tracking-wide text-neutral-400 uppercase">Vault</p>
-        <h1 className="mt-3 text-3xl font-semibold text-balance sm:text-4xl">
-          Your knowledge, one clean surface.
-        </h1>
-        <p className="mt-4 text-lg leading-relaxed text-neutral-500 dark:text-neutral-400">
-          A mobile-first front end for your private markdown vault. Read, search, and edit — backed
-          by your own GitHub repo, with nothing stored on any server but your own.
-        </p>
-        <p className="mt-8 text-sm text-neutral-400">Foundation ready. Building from here.</p>
-      </main>
+      {connected ? <Home /> : <Onboarding />}
     </div>
   );
 }
