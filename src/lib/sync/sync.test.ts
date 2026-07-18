@@ -9,6 +9,7 @@ import { syncVault } from './sync';
 class FakeClient {
   branchQueue: Conditional<BranchResponse>[] = [];
   treeEntries: { path: string; type: 'blob' | 'tree'; sha: string }[] = [];
+  truncated = false;
   blobs = new Map<string, string>();
   blobFetches: string[] = [];
 
@@ -18,7 +19,7 @@ class FakeClient {
     return Promise.resolve(next);
   }
   getTree() {
-    return Promise.resolve({ sha: 'tree', truncated: false, tree: this.treeEntries });
+    return Promise.resolve({ sha: 'tree', truncated: this.truncated, tree: this.treeEntries });
   }
   getBlobText(sha: string): Promise<string> {
     this.blobFetches.push(sha);
@@ -122,6 +123,31 @@ describe('syncVault', () => {
     const paths = (await database.notes.toArray()).map((n) => n.path).sort();
     expect(paths).toEqual(['w/A.md', 'w/C.md']);
     expect((await database.notes.get('w/A.md'))?.body).toBe('A two');
+  });
+
+  it('on a truncated tree, does not prune and does not persist the watermark', async () => {
+    // Seed one cached note via a normal sync.
+    const first = new FakeClient();
+    first.branchQueue = [branch('c1', 't1', 'W/"e1"')];
+    first.treeEntries = [{ path: 'w/A.md', type: 'blob', sha: 'a1' }];
+    first.blobs.set('a1', 'A one');
+    await syncVault(asClient(first), database, {});
+
+    // Truncated sync that omits w/A.md and adds w/B.md.
+    const second = new FakeClient();
+    second.truncated = true;
+    second.branchQueue = [branch('c2', 't2', 'W/"e2"')];
+    second.treeEntries = [{ path: 'w/B.md', type: 'blob', sha: 'b1' }];
+    second.blobs.set('b1', 'B one');
+    const result = await syncVault(asClient(second), database, {});
+
+    expect(result.truncated).toBe(true);
+    expect(result.removed).toBe(0); // A.md must NOT be pruned despite being absent
+    const paths = (await database.notes.toArray()).map((n) => n.path).sort();
+    expect(paths).toEqual(['w/A.md', 'w/B.md']);
+    // Watermark stays at the first sync so the next sync retries in full.
+    expect(await database.getMeta('headSha')).toBe('c1');
+    expect(await database.getMeta('branchEtag')).toBe('W/"e1"');
   });
 
   it('reports progress phases', async () => {

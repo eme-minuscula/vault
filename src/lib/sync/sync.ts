@@ -23,6 +23,8 @@ export interface SyncResult {
   removed: number;
   upToDate: boolean;
   headSha: string | null;
+  /** True if GitHub truncated the tree response — the sync is intentionally partial. */
+  truncated: boolean;
 }
 
 export interface SyncOptions {
@@ -61,6 +63,7 @@ export async function syncVault(
       removed: 0,
       upToDate: true,
       headSha: await database.getMeta(META_HEAD_SHA),
+      truncated: false,
     };
   }
 
@@ -70,6 +73,12 @@ export async function syncVault(
 
   report('listing', 0, 0);
   const tree = await client.getTree(treeSha);
+
+  // If GitHub truncated the tree, `desired` is incomplete. We must NOT prune
+  // (omitted paths would look deleted) and must NOT persist the new head/etag
+  // (that would make the next sync short-circuit on a partial state). We still
+  // fetch what we did receive. The real vault is far under the truncation limit.
+  const truncated = tree.truncated;
 
   // Desired state: markdown blobs not under an ignored prefix.
   const desired = new Map<string, string>(); // path -> blob sha
@@ -87,8 +96,10 @@ export async function syncVault(
     if (existing.get(path) !== sha) toFetch.push(path);
   }
   const toDelete: string[] = [];
-  for (const path of existing.keys()) {
-    if (!desired.has(path)) toDelete.push(path);
+  if (!truncated) {
+    for (const path of existing.keys()) {
+      if (!desired.has(path)) toDelete.push(path);
+    }
   }
 
   // Prune removed notes first so the cache never holds orphans.
@@ -110,11 +121,20 @@ export async function syncVault(
 
   if (records.length) await database.notes.bulkPut(records);
 
-  if (headSha) await database.setMeta(META_HEAD_SHA, headSha);
-  if (branch.etag) await database.setMeta(META_BRANCH_ETAG, branch.etag);
+  // Only advance the sync watermark on a complete tree, so a truncated sync retries.
+  if (!truncated) {
+    if (headSha) await database.setMeta(META_HEAD_SHA, headSha);
+    if (branch.etag) await database.setMeta(META_BRANCH_ETAG, branch.etag);
+  }
 
   report('done', fetched, toFetch.length);
-  return { changed: records.length, removed: toDelete.length, upToDate: false, headSha };
+  return {
+    changed: records.length,
+    removed: toDelete.length,
+    upToDate: false,
+    headSha,
+    truncated,
+  };
 }
 
 function toRecord(path: string, sha: string, raw: string): NoteRecord {

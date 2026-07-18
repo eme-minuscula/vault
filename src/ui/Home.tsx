@@ -19,7 +19,7 @@ export function Home() {
     const byVault = new Map<VaultId, number>();
     let active = 0;
     for (const n of all) {
-      byVault.set(n.vault as VaultId, (byVault.get(n.vault as VaultId) ?? 0) + 1);
+      byVault.set(n.vault, (byVault.get(n.vault) ?? 0) + 1);
       if (n.active) active += 1;
     }
     return { total: all.length, active, byVault };
@@ -28,8 +28,14 @@ export function Home() {
   const syncing = status === 'syncing';
 
   async function disconnect() {
-    await deleteDatabase();
+    // Always wipe the credential first; a failed cache delete must never leave
+    // the token behind. The cache is recoverable — the repo is the source of truth.
     forget();
+    try {
+      await deleteDatabase();
+    } catch {
+      /* cache delete failed; token is already cleared */
+    }
   }
 
   return (
@@ -95,6 +101,13 @@ export function Home() {
             ? 'Already up to date.'
             : `Updated ${lastResult.changed} note${lastResult.changed === 1 ? '' : 's'}` +
               (lastResult.removed ? `, removed ${lastResult.removed}.` : '.')}
+        </p>
+      )}
+
+      {lastResult?.truncated && !syncing && (
+        <p className="mt-2 text-sm text-amber-600 dark:text-amber-400">
+          Your vault is very large and GitHub returned a partial list — some notes may be missing.
+          Sync again to keep filling the cache.
         </p>
       )}
 

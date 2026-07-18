@@ -1,11 +1,12 @@
 import Dexie, { type EntityTable } from 'dexie';
+import type { VaultId } from '../vault/path';
 
 /** One cached note. `path` is the repo-relative path and the primary key. */
 export interface NoteRecord {
   path: string;
   /** Immutable git blob SHA — lets us skip re-fetching unchanged files. */
   sha: string;
-  vault: string; // top-level segment: 'w' | 'm' | 'r' | '_inbox' | 'other'
+  vault: VaultId; // top-level segment
   folder: string; // directory portion, '' for repo root
   title: string; // display title (H1 if present, else filename)
   type: string | null;
