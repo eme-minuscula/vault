@@ -3,7 +3,7 @@ import { VaultDb } from '../cache/db';
 import type { GitHubClient } from '../github/client';
 import type { Conditional } from '../github/types';
 import type { BranchResponse } from '../github/types';
-import { syncVault } from './sync';
+import { syncVault, toRecord } from './sync';
 
 /** A scriptable stand-in for GitHubClient covering only what syncVault calls. */
 class FakeClient {
@@ -53,6 +53,8 @@ describe('syncVault', () => {
       { path: 'm/Journal.md', type: 'blob', sha: 'b2' },
       { path: 'w/PrOps/Knowledge/LennysPodcast/ep.md', type: 'blob', sha: 'b3' },
       { path: 'r/attachments/pic.png', type: 'blob', sha: 'b4' },
+      { path: '.stversions/w/Old.md', type: 'blob', sha: 'b5' }, // dot-folder → excluded
+      { path: 'w/Projects/HA/Creds.md', type: 'blob', sha: 'b6' }, // Creds → excluded
       { path: 'w', type: 'tree', sha: 'tdir' },
     ];
     fake.blobs.set('b1', '---\ntype: learning\nactive: true\n---\n# Work note\nbody');
@@ -177,6 +179,18 @@ describe('syncVault', () => {
     const paths = (await database.notes.toArray()).map((n) => n.path).sort();
     expect(paths).toEqual(['w/A.md', 'w/B.md']);
     expect((await database.notes.get('w/B.md'))?.body).toBe('B one'); // local copy kept
+  });
+
+  it('purges an already-cached excluded note even on a 304', async () => {
+    await database.notes.put(toRecord('w/Projects/HA/Creds.md', 'x', 'secret'));
+    expect(await database.notes.get('w/Projects/HA/Creds.md')).toBeDefined();
+
+    const fake = new FakeClient();
+    fake.branchQueue = [{ notModified: true, etag: 'W/"e1"', data: null }];
+    await syncVault(asClient(fake), database, {});
+
+    expect(await database.notes.get('w/Projects/HA/Creds.md')).toBeUndefined();
+    expect(await database.getMeta('excludedCleanup:v1')).toBe('1');
   });
 
   it('reports progress phases', async () => {

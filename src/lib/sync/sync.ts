@@ -2,11 +2,12 @@ import type { GitHubClient } from '../github/client';
 import type { VaultDb, NoteRecord } from '../cache/db';
 import { parseNote } from '../frontmatter/parse';
 import { splitDoc } from '../frontmatter/doc';
-import { pathMeta, isMarkdown } from '../vault/path';
+import { pathMeta, isMarkdown, isExcludedPath } from '../vault/path';
 import { mapLimit } from './mapLimit';
 
 const META_HEAD_SHA = 'headSha';
 const META_BRANCH_ETAG = 'branchEtag';
+const META_EXCLUDED_CLEANUP = 'excludedCleanup:v1';
 
 /** Bounded concurrency for blob fetches — polite to the API and to mobile networks. */
 const FETCH_CONCURRENCY = 6;
@@ -61,6 +62,15 @@ export async function syncVault(
     opts.onProgress?.({ phase, fetched, toFetch });
 
   report('checking', 0, 0);
+
+  // One-time purge of anything now excluded (e.g. previously-cached .stversions
+  // backups or a Creds.md). Runs regardless of the ETag short-circuit below, so
+  // tightened rules take effect on the next sync without a full re-sync.
+  if (!(await database.getMeta(META_EXCLUDED_CLEANUP))) {
+    await database.notes.filter((n) => isExcludedPath(n.path)).delete();
+    await database.setMeta(META_EXCLUDED_CLEANUP, '1');
+  }
+
   const priorEtag = opts.force ? null : await database.getMeta(META_BRANCH_ETAG);
   const branch = await client.getBranch(priorEtag);
 
@@ -92,6 +102,7 @@ export async function syncVault(
   const desired = new Map<string, string>(); // path -> blob sha
   for (const entry of tree.tree) {
     if (entry.type !== 'blob' || !isMarkdown(entry.path)) continue;
+    if (isExcludedPath(entry.path)) continue;
     if (ignored.some((prefix) => entry.path.startsWith(prefix))) continue;
     desired.set(entry.path, entry.sha);
   }
