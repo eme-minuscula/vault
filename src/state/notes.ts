@@ -21,6 +21,26 @@ export function useVaultNotes(vault: VaultId | undefined): NoteRecord[] | undefi
   }, [vault]);
 }
 
+/** Every cached note (used by search). Sorted by title. */
+export function useAllNotes(): NoteRecord[] | undefined {
+  return useLiveQuery(async () => {
+    const notes = await db().notes.toArray();
+    notes.sort((a, b) => a.title.localeCompare(b.title));
+    return notes;
+  }, []);
+}
+
+/** All notes flagged `active: true`, across vaults, sorted by vault then title. */
+export function useActiveNotes(): NoteRecord[] | undefined {
+  return useLiveQuery(async () => {
+    const notes = await db()
+      .notes.filter((n) => n.active)
+      .toArray();
+    notes.sort((a, b) => a.vault.localeCompare(b.vault) || a.title.localeCompare(b.title));
+    return notes;
+  }, []);
+}
+
 /** Per-vault note counts for the library overview. */
 export function useVaultCounts(): Record<VaultId, number> | undefined {
   return useLiveQuery(async () => {
