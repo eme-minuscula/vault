@@ -14,6 +14,7 @@ function note(p: Partial<NoteRecord> & { path: string }): NoteRecord {
     active: p.active ?? false,
     date: p.date ?? null,
     snippet: p.snippet ?? '',
+    frontmatter: p.frontmatter ?? '',
     body: p.body ?? '',
     updatedAt: 0,
   };

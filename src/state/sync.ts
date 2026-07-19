@@ -3,6 +3,7 @@ import { GitHubClient } from '../lib/github/client';
 import { GitHubError, type GitHubErrorKind } from '../lib/github/errors';
 import { db } from '../lib/cache/db';
 import { syncVault, type SyncProgress, type SyncResult } from '../lib/sync/sync';
+import { flushOutbox } from '../lib/vault/mutations';
 import { useSettings } from './settings';
 
 export interface SyncError {
@@ -52,6 +53,8 @@ export const useSync = create<SyncState>((set, get) => ({
         force: opts.force,
         onProgress: (progress) => set({ progress }),
       });
+      // Push any writes queued while offline, now that we know we're online.
+      await flushOutbox(client, db());
       setConfigured(true);
       set({
         status: 'idle',

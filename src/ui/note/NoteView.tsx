@@ -7,6 +7,7 @@ import { VAULT_LABELS } from '../../lib/vault/path';
 import { vaultHref } from '../../app/routes';
 import { Markdown } from './Markdown';
 import { Backlinks } from './Backlinks';
+import { NoteActions } from './NoteActions';
 
 /** Read a single note: metadata, rendered body, and backlinks. */
 export function NoteView() {
@@ -72,6 +73,8 @@ export function NoteView() {
           </span>
         ))}
       </div>
+
+      <NoteActions note={note} />
 
       <div className="mt-6">
         <Markdown body={stripLeadingH1(note.body)} resolve={resolve} />

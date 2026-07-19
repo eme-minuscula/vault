@@ -1,6 +1,7 @@
 import type { GitHubClient } from '../github/client';
 import type { VaultDb, NoteRecord } from '../cache/db';
 import { parseNote } from '../frontmatter/parse';
+import { splitDoc } from '../frontmatter/doc';
 import { pathMeta, isMarkdown } from '../vault/path';
 import { mapLimit } from './mapLimit';
 
@@ -137,8 +138,9 @@ export async function syncVault(
   };
 }
 
-function toRecord(path: string, sha: string, raw: string): NoteRecord {
+export function toRecord(path: string, sha: string, raw: string): NoteRecord {
   const parsed = parseNote(raw);
+  const { frontmatter, body } = splitDoc(raw);
   const { vault, folder, filename } = pathMeta(path);
   return {
     path,
@@ -151,7 +153,8 @@ function toRecord(path: string, sha: string, raw: string): NoteRecord {
     active: parsed.frontmatter.active,
     date: parsed.frontmatter.date,
     snippet: parsed.snippet,
-    body: parsed.body,
+    frontmatter,
+    body,
     updatedAt: Date.now(),
   };
 }
