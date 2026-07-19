@@ -37,6 +37,11 @@ export interface ContentResponse {
   encoding: string;
 }
 
+export interface WriteResponse {
+  content: { sha: string; path: string } | null;
+  commit: { sha: string };
+}
+
 /** Result of a conditional GET: `notModified` short-circuits on a 304. */
 export interface Conditional<T> {
   notModified: boolean;

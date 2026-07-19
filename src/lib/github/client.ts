@@ -6,6 +6,7 @@ import type {
   ContentResponse,
   RateLimit,
   TreeResponse,
+  WriteResponse,
 } from './types';
 
 export interface GitHubConfig {
@@ -72,6 +73,45 @@ export class GitHubClient {
       )}`,
     );
     return (await res.json()) as ContentResponse;
+  }
+
+  /**
+   * Create or update a file. Pass the current blob `sha` to update (GitHub
+   * rejects a stale sha with 409/422 → GitHubError kind 'conflict'); omit it to
+   * create. Returns the new blob + commit SHAs.
+   */
+  async putFile(
+    path: string,
+    args: { message: string; text: string; sha?: string },
+  ): Promise<WriteResponse> {
+    const body: Record<string, string> = {
+      message: args.message,
+      content: encodeBase64Utf8(args.text),
+      branch: this.cfg.branch,
+    };
+    if (args.sha) body.sha = args.sha;
+    const res = await this.request(
+      `/repos/${this.cfg.owner}/${this.cfg.repo}/contents/${encodePath(path)}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    );
+    return (await res.json()) as WriteResponse;
+  }
+
+  /** Delete a file. Requires the current blob `sha`. */
+  async deleteFile(path: string, args: { message: string; sha: string }): Promise<WriteResponse> {
+    const res = await this.request(
+      `/repos/${this.cfg.owner}/${this.cfg.repo}/contents/${encodePath(path)}`,
+      {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: args.message, sha: args.sha, branch: this.cfg.branch }),
+      },
+    );
+    return (await res.json()) as WriteResponse;
   }
 
   /** Lightweight connectivity + auth check: resolves the branch, returns HEAD SHA. */

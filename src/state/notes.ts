@@ -41,6 +41,11 @@ export function useActiveNotes(): NoteRecord[] | undefined {
   }, []);
 }
 
+/** Number of writes queued in the offline outbox. */
+export function usePendingCount(): number {
+  return useLiveQuery(() => db().outbox.count(), [], 0) ?? 0;
+}
+
 /** Per-vault note counts for the library overview. */
 export function useVaultCounts(): Record<VaultId, number> | undefined {
   return useLiveQuery(async () => {

@@ -3,6 +3,7 @@ import { GitHubClient } from '../lib/github/client';
 import { GitHubError, type GitHubErrorKind } from '../lib/github/errors';
 import { db } from '../lib/cache/db';
 import { syncVault, type SyncProgress, type SyncResult } from '../lib/sync/sync';
+import { flushOutbox } from '../lib/vault/mutations';
 import { useSettings } from './settings';
 
 export interface SyncError {
@@ -47,9 +48,15 @@ export const useSync = create<SyncState>((set, get) => ({
 
     try {
       const client = new GitHubClient({ token, owner, repo, branch });
+      // Push queued writes BEFORE reconciling, so the sync's prune/refetch never
+      // fights a local write that hasn't reached GitHub yet. Anything that fails
+      // to flush stays in the outbox and is shielded from the reconcile pass.
+      await flushOutbox(client, db());
+      const stillPending = new Set((await db().outbox.toArray()).map((o) => o.path));
       const result = await syncVault(client, db(), {
         ignoredPrefixes,
         force: opts.force,
+        protectedPaths: stillPending,
         onProgress: (progress) => set({ progress }),
       });
       setConfigured(true);

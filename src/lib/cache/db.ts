@@ -14,8 +14,28 @@ export interface NoteRecord {
   active: boolean;
   date: string | null;
   snippet: string;
+  /** Verbatim frontmatter block (fences included), or '' — needed to write losslessly. */
+  frontmatter: string;
   body: string;
   updatedAt: number; // local cache timestamp (ms)
+}
+
+/** A queued write, held while offline and flushed when back online. */
+export interface OutboxOp {
+  id?: number;
+  op: 'put' | 'delete';
+  path: string;
+  message: string;
+  /** Full file text for a `put`. */
+  text?: string;
+  /** Blob SHA the edit was based on; undefined for a create. */
+  baseSha?: string;
+  createdAt: number;
+}
+
+/** Reassemble the full note text (frontmatter + body) for writing back. */
+export function fullText(note: Pick<NoteRecord, 'frontmatter' | 'body'>): string {
+  return (note.frontmatter ?? '') + note.body;
 }
 
 /** Small key/value store for sync bookkeeping (HEAD sha, branch ETag, …). */
@@ -29,6 +49,7 @@ const DB_NAME = 'vault-cache';
 export class VaultDb extends Dexie {
   notes!: EntityTable<NoteRecord, 'path'>;
   meta!: EntityTable<MetaRecord, 'key'>;
+  outbox!: EntityTable<OutboxOp, 'id'>;
 
   constructor() {
     super(DB_NAME);
@@ -41,6 +62,12 @@ export class VaultDb extends Dexie {
     this.version(2).stores({
       notes: 'path, vault, type, date, *tags',
       meta: 'key',
+    });
+    // v3 adds the offline write outbox.
+    this.version(3).stores({
+      notes: 'path, vault, type, date, *tags',
+      meta: 'key',
+      outbox: '++id, path',
     });
   }
 
@@ -55,9 +82,10 @@ export class VaultDb extends Dexie {
 
   /** Wipe all cached content (e.g. on sign-out or repo switch). */
   async clearAll(): Promise<void> {
-    await this.transaction('rw', this.notes, this.meta, async () => {
+    await this.transaction('rw', this.notes, this.meta, this.outbox, async () => {
       await this.notes.clear();
       await this.meta.clear();
+      await this.outbox.clear();
     });
   }
 }

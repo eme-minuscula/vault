@@ -1,6 +1,7 @@
 import type { GitHubClient } from '../github/client';
 import type { VaultDb, NoteRecord } from '../cache/db';
 import { parseNote } from '../frontmatter/parse';
+import { splitDoc } from '../frontmatter/doc';
 import { pathMeta, isMarkdown } from '../vault/path';
 import { mapLimit } from './mapLimit';
 
@@ -32,6 +33,12 @@ export interface SyncOptions {
   ignoredPrefixes?: readonly string[];
   /** Force a full reconcile even if the branch ETag says nothing changed. */
   force?: boolean;
+  /**
+   * Paths with a still-pending offline write. They are shielded from prune and
+   * from refetch/overwrite so the reconcile pass never clobbers a local write
+   * that hasn't reached GitHub yet.
+   */
+  protectedPaths?: ReadonlySet<string>;
   onProgress?: (p: SyncProgress) => void;
 }
 
@@ -49,6 +56,7 @@ export async function syncVault(
   opts: SyncOptions = {},
 ): Promise<SyncResult> {
   const ignored = opts.ignoredPrefixes ?? [];
+  const protectedPaths = opts.protectedPaths ?? new Set<string>();
   const report = (phase: SyncPhase, fetched: number, toFetch: number) =>
     opts.onProgress?.({ phase, fetched, toFetch });
 
@@ -93,11 +101,13 @@ export async function syncVault(
 
   const toFetch: string[] = [];
   for (const [path, sha] of desired) {
+    if (protectedPaths.has(path)) continue; // don't overwrite a pending local write
     if (existing.get(path) !== sha) toFetch.push(path);
   }
   const toDelete: string[] = [];
   if (!truncated) {
     for (const path of existing.keys()) {
+      if (protectedPaths.has(path)) continue; // don't prune a note with a pending write
       if (!desired.has(path)) toDelete.push(path);
     }
   }
@@ -137,8 +147,9 @@ export async function syncVault(
   };
 }
 
-function toRecord(path: string, sha: string, raw: string): NoteRecord {
+export function toRecord(path: string, sha: string, raw: string): NoteRecord {
   const parsed = parseNote(raw);
+  const { frontmatter, body } = splitDoc(raw);
   const { vault, folder, filename } = pathMeta(path);
   return {
     path,
@@ -151,7 +162,8 @@ function toRecord(path: string, sha: string, raw: string): NoteRecord {
     active: parsed.frontmatter.active,
     date: parsed.frontmatter.date,
     snippet: parsed.snippet,
-    body: parsed.body,
+    frontmatter,
+    body,
     updatedAt: Date.now(),
   };
 }

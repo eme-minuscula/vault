@@ -8,6 +8,7 @@ import { Library } from './ui/Library';
 import { VaultView } from './ui/VaultView';
 import { ActiveView } from './ui/ActiveView';
 import { SearchView } from './ui/search/SearchView';
+import { EditRoute, NewRoute } from './ui/note/EditRoute';
 import { Settings } from './ui/Settings';
 
 // The note reader pulls in the markdown engine (remark/rehype). Load it only
@@ -31,6 +32,14 @@ export function App() {
     if (connected) void run();
   }, [connected, run]);
 
+  // When the device comes back online, sync (which also flushes queued writes).
+  useEffect(() => {
+    if (!connected) return;
+    const onOnline = () => void run();
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [connected, run]);
+
   if (!connected) {
     return (
       <div className="min-h-full bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
@@ -46,6 +55,8 @@ export function App() {
           <Route path="/" element={<Library />} />
           <Route path="/search" element={<SearchView />} />
           <Route path="/active" element={<ActiveView />} />
+          <Route path="/new" element={<NewRoute />} />
+          <Route path="/edit/*" element={<EditRoute />} />
           <Route path="/v/:vault" element={<VaultView />} />
           <Route
             path="/note/*"
