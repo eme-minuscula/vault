@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useNote, useVaultNotes, toResolvable } from '../../state/notes';
+import { useNote, useVaultNotes, useVaultAttachments, toResolvable } from '../../state/notes';
 import { stripLeadingH1 } from '../../lib/frontmatter/parse';
 import { findBacklinks, resolveWikiTarget } from '../../lib/vault/links';
+import { resolveAttachmentPath } from '../../lib/vault/attachments';
 import { VAULT_LABELS } from '../../lib/vault/path';
 import { vaultHref } from '../../app/routes';
 import { Markdown } from './Markdown';
@@ -22,6 +23,12 @@ export function NoteView() {
     const vault = note?.vault;
     return (target: string) => (vault ? resolveWikiTarget(target, vault, resolvable) : null);
   }, [note?.vault, resolvable]);
+
+  const attachments = useVaultAttachments(note?.vault);
+  const resolveAttachment = useMemo(() => {
+    const vault = note?.vault;
+    return (src: string) => (vault ? resolveAttachmentPath(src, vault, attachments ?? []) : null);
+  }, [note?.vault, attachments]);
 
   const backlinks = useMemo(() => {
     if (!note) return [];
@@ -77,7 +84,11 @@ export function NoteView() {
       <NoteActions note={note} />
 
       <div className="mt-6">
-        <Markdown body={stripLeadingH1(note.body)} resolve={resolve} />
+        <Markdown
+          body={stripLeadingH1(note.body)}
+          resolve={resolve}
+          resolveAttachment={resolveAttachment}
+        />
       </div>
 
       <Backlinks paths={backlinks} />

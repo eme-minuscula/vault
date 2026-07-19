@@ -1,8 +1,9 @@
 import type { GitHubClient } from '../github/client';
-import type { VaultDb, NoteRecord } from '../cache/db';
+import type { VaultDb, NoteRecord, AttachmentRecord } from '../cache/db';
 import { parseNote } from '../frontmatter/parse';
 import { splitDoc } from '../frontmatter/doc';
 import { pathMeta, isMarkdown, isExcludedPath } from '../vault/path';
+import { isImagePath } from '../vault/attachments';
 import { mapLimit } from './mapLimit';
 
 const META_HEAD_SHA = 'headSha';
@@ -142,6 +143,10 @@ export async function syncVault(
 
   if (records.length) await database.notes.bulkPut(records);
 
+  // Index image attachments (metadata only — the bytes are fetched lazily on
+  // display). Cheap: no blob downloads happen here.
+  await indexAttachments(database, tree.tree, ignored, truncated);
+
   // Only advance the sync watermark on a complete tree, so a truncated sync retries.
   if (!truncated) {
     if (headSha) await database.setMeta(META_HEAD_SHA, headSha);
@@ -156,6 +161,47 @@ export async function syncVault(
     headSha,
     truncated,
   };
+}
+
+/** Reconcile the image-attachment index against the current tree (metadata only). */
+async function indexAttachments(
+  database: VaultDb,
+  tree: { path: string; type: string; sha: string }[],
+  ignored: readonly string[],
+  truncated: boolean,
+): Promise<void> {
+  const desired = new Map<string, string>();
+  for (const entry of tree) {
+    if (entry.type !== 'blob' || !isImagePath(entry.path)) continue;
+    if (isExcludedPath(entry.path)) continue;
+    if (ignored.some((prefix) => entry.path.startsWith(prefix))) continue;
+    desired.set(entry.path, entry.sha);
+  }
+
+  const existing = new Map<string, string>();
+  await database.attachments.each((a) => existing.set(a.path, a.sha));
+
+  // Changed/new: re-index (drops any stale cached dataUri by omitting it).
+  const toPut: AttachmentRecord[] = [];
+  for (const [path, sha] of desired) {
+    if (existing.get(path) === sha) continue;
+    const { vault } = pathMeta(path);
+    toPut.push({
+      path,
+      sha,
+      vault,
+      filename: path.split('/').at(-1) ?? path,
+      updatedAt: Date.now(),
+    });
+  }
+
+  const toDelete: string[] = [];
+  if (!truncated) {
+    for (const path of existing.keys()) if (!desired.has(path)) toDelete.push(path);
+  }
+
+  if (toDelete.length) await database.attachments.bulkDelete(toDelete);
+  if (toPut.length) await database.attachments.bulkPut(toPut);
 }
 
 export function toRecord(path: string, sha: string, raw: string): NoteRecord {

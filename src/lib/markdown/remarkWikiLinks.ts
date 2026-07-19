@@ -18,6 +18,7 @@ interface MdNode {
   type: string;
   value?: string;
   url?: string;
+  alt?: string | null;
   title?: string | null;
   children?: MdNode[];
 }
@@ -65,7 +66,8 @@ function toNode(embed: boolean, inner: string, resolve: WikiResolver): MdNode {
   const text = link.label ?? link.target;
 
   if (embed && IMAGE_EXT_RE.test(link.target)) {
-    return { type: 'inlineCode', value: `🖼 ${link.target}` };
+    // Image embed → an image node; the renderer resolves it to a vault attachment.
+    return { type: 'image', url: link.target, alt: link.label ?? link.target, title: null };
   }
 
   const resolved = resolve(link.target);

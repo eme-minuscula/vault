@@ -20,10 +20,13 @@ describe('Markdown security', () => {
         resolve={() => null}
       />,
     );
+    // The javascript: image is routed through the safe image renderer (a
+    // placeholder, never an <img src="javascript:...">), and the raw <img onerror>
+    // is stripped by the sanitizer. Neither vector survives in the DOM.
     const img = container.querySelector('img');
-    // Any surviving img must not carry an onerror handler or a javascript: src.
-    expect(img?.getAttribute('onerror')).toBeNull();
+    expect(img?.getAttribute('onerror') ?? null).toBeNull();
     expect(container.innerHTML).not.toContain('javascript:');
+    expect(container.innerHTML).not.toContain('onerror');
   });
 
   it('neutralizes a javascript: text link href', () => {
