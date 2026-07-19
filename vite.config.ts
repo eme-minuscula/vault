@@ -82,6 +82,21 @@ export default defineConfig(({ command }) => {
           // separately in IndexedDB by the data layer, never by the service worker,
           // so private note bodies never land in the Cache Storage of a shared device.
           globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+          // The WYSIWYG editor bundle is large and rarely the first thing used, so
+          // keep it out of the install-time precache and fetch it on demand (then
+          // cache it, so offline editing still works after the first use).
+          globIgnores: ['**/editor-*.js', '**/editor-*.css'],
+          runtimeCaching: [
+            {
+              urlPattern: ({ url }) => /\/editor-[^/]+\.(js|css)$/.test(url.pathname),
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'vault-editor',
+                expiration: { maxEntries: 6 },
+                cacheableResponse: { statuses: [0, 200] },
+              },
+            },
+          ],
           navigateFallback: `${base}index.html`,
           navigateFallbackDenylist: [/^\/api/],
         },
@@ -90,6 +105,28 @@ export default defineConfig(({ command }) => {
         },
       }),
     ],
+    build: {
+      rollupOptions: {
+        output: {
+          // Consolidate the editor-only libraries (Milkdown/ProseMirror/CodeMirror,
+          // and Vue which Crepe's UI uses) into one on-demand `editor` chunk. These
+          // are not used by the reader, so this never bloats the critical path — and
+          // it gives the chunk a stable name the service worker can exclude above.
+          manualChunks(id) {
+            if (
+              id.includes('/@milkdown/') ||
+              id.includes('/prosemirror') ||
+              id.includes('/@codemirror/') ||
+              id.includes('/@vue/') ||
+              id.includes('/node_modules/vue/') ||
+              id.includes('/@floating-ui/')
+            ) {
+              return 'editor';
+            }
+          },
+        },
+      },
+    },
     test: {
       globals: true,
       environment: 'jsdom',

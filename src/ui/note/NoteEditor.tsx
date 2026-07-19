@@ -1,15 +1,22 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { currentClient } from '../../state/client';
 import { db } from '../../lib/cache/db';
 import { saveNoteText } from '../../lib/vault/mutations';
+import { splitDoc } from '../../lib/frontmatter/doc';
+import { hasExtendedSyntax } from '../../lib/markdown/wysiwyg';
 import { notePathname } from '../../app/routes';
 import { describeError } from '../errors';
+import { WysiwygEditor, type WysiwygHandle } from './WysiwygEditor';
+
+type Mode = 'wysiwyg' | 'raw';
 
 /**
- * Raw markdown editor. Edits the full note text (frontmatter included) so what
- * you see is exactly what gets committed — fully lossless. A WYSIWYG mode layers
- * on top of this in a follow-up; this raw view stays the source of truth.
+ * Note editor with two modes that toggle per note:
+ * - WYSIWYG (default): Notion-style editing of the body; frontmatter preserved
+ *   verbatim. May normalize markdown formatting.
+ * - Raw markdown: edits the full text (frontmatter included) — fully lossless,
+ *   the source of truth.
  */
 export function NoteEditor({
   create = false,
@@ -24,11 +31,43 @@ export function NoteEditor({
 }) {
   const navigate = useNavigate();
   const [path, setPath] = useState(initialPath);
-  const [text, setText] = useState(initialText);
+  // Default to Visual, but open notes that use extended Obsidian syntax
+  // (callouts, highlights, comments, block refs) in raw mode so a view+save
+  // can't silently normalize them.
+  const [mode, setMode] = useState<Mode>(() =>
+    hasExtendedSyntax(splitDoc(initialText).body) ? 'raw' : 'wysiwyg',
+  );
   const [status, setStatus] = useState<'idle' | 'saving'>('idle');
   const [error, setError] = useState<string | null>(null);
 
-  const dirty = text !== initialText || (create && path !== initialPath);
+  // Canonical full text for raw mode. In WYSIWYG mode the frontmatter is held
+  // aside and the body lives in Crepe (read on demand via the handle).
+  const [text, setText] = useState(initialText);
+  const frontmatterRef = useRef(splitDoc(initialText).frontmatter);
+  const [wysiwygBody, setWysiwygBody] = useState(splitDoc(initialText).body);
+  const [wysiwygKey, setWysiwygKey] = useState(0);
+  const wysiwygRef = useRef<WysiwygHandle>(null);
+
+  /** Reassemble the full document from whichever mode is active. */
+  function currentFullText(): string {
+    if (mode === 'wysiwyg') {
+      return frontmatterRef.current + (wysiwygRef.current?.getMarkdown() ?? wysiwygBody);
+    }
+    return text;
+  }
+
+  function switchTo(next: Mode) {
+    if (next === mode) return;
+    if (next === 'raw') {
+      setText(currentFullText());
+    } else {
+      const { frontmatter, body } = splitDoc(text);
+      frontmatterRef.current = frontmatter;
+      setWysiwygBody(body);
+      setWysiwygKey((k) => k + 1); // remount Crepe with the new body
+    }
+    setMode(next);
+  }
 
   async function save() {
     const client = currentClient();
@@ -41,10 +80,16 @@ export function NoteEditor({
       setError('Enter a path like w/Folder/Title.md');
       return;
     }
+    const full = currentFullText();
+    if (!create && full === initialText) {
+      // Nothing changed — skip the write (and the empty commit).
+      void navigate(notePathname(cleanPath), { replace: true });
+      return;
+    }
     setStatus('saving');
     setError(null);
     try {
-      await saveNoteText(client, db(), cleanPath, text, { create });
+      await saveNoteText(client, db(), cleanPath, full, { create });
       // Queued-offline still updates the cache optimistically, so navigate either way
       // (the outbox flushes on reconnect).
       void navigate(notePathname(cleanPath), { replace: true });
@@ -63,13 +108,16 @@ export function NoteEditor({
         >
           Cancel
         </button>
-        <button
-          onClick={() => void save()}
-          disabled={status === 'saving' || !dirty}
-          className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40 dark:bg-white dark:text-neutral-900"
-        >
-          {status === 'saving' ? 'Saving…' : create ? 'Create' : 'Save'}
-        </button>
+        <div className="flex items-center gap-3">
+          <ModeToggle mode={mode} onChange={switchTo} />
+          <button
+            onClick={() => void save()}
+            disabled={status === 'saving'}
+            className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40 dark:bg-white dark:text-neutral-900"
+          >
+            {status === 'saving' ? 'Saving…' : create ? 'Create' : 'Save'}
+          </button>
+        </div>
       </div>
 
       {create && (
@@ -87,13 +135,17 @@ export function NoteEditor({
         </label>
       )}
 
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        spellCheck
-        placeholder={'---\ntype: note\n---\n\n# Title\n\nWrite here…'}
-        className="min-h-[60vh] w-full resize-y rounded-lg border border-neutral-200 bg-white p-4 font-mono text-sm leading-relaxed outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-950 dark:focus:border-neutral-600"
-      />
+      {mode === 'wysiwyg' ? (
+        <WysiwygEditor key={wysiwygKey} ref={wysiwygRef} defaultBody={wysiwygBody} />
+      ) : (
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          spellCheck
+          placeholder={'---\ntype: note\n---\n\n# Title\n\nWrite here…'}
+          className="min-h-[60vh] w-full resize-y rounded-lg border border-neutral-200 bg-white p-4 font-mono text-sm leading-relaxed outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-950 dark:focus:border-neutral-600"
+        />
+      )}
 
       {error && (
         <p
@@ -105,8 +157,30 @@ export function NoteEditor({
       )}
 
       <p className="text-xs text-neutral-400">
-        Editing raw markdown, including frontmatter. Saved as a commit to your vault.
+        {mode === 'wysiwyg'
+          ? 'Visual editing of the body — formatting may be normalized on save. Frontmatter is preserved; switch to Markdown for exact control.'
+          : 'Editing raw markdown, including frontmatter — exactly what gets committed.'}
       </p>
+    </div>
+  );
+}
+
+function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
+  return (
+    <div className="flex rounded-lg border border-neutral-200 p-0.5 text-xs dark:border-neutral-800">
+      {(['wysiwyg', 'raw'] as Mode[]).map((m) => (
+        <button
+          key={m}
+          onClick={() => onChange(m)}
+          className={
+            mode === m
+              ? 'rounded-md bg-neutral-900 px-2.5 py-1 font-medium text-white dark:bg-white dark:text-neutral-900'
+              : 'rounded-md px-2.5 py-1 text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200'
+          }
+        >
+          {m === 'wysiwyg' ? 'Visual' : 'Markdown'}
+        </button>
+      ))}
     </div>
   );
 }
