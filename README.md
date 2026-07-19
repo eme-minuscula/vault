@@ -4,7 +4,8 @@ A clean, mobile-first **PWA** that is the front door to a private, GitHub-backed
 markdown knowledge vault. Read, search, and edit your notes from any device — with a
 calm, typographic reading surface (Medium / Notion feel) and a fast offline cache.
 
-> Status: **in active development.** Milestone M0 (foundation) is the current baseline.
+> Status: **feature-complete (v1).** Read, search, and edit all work end to end.
+> Live at **https://eme-minuscula.github.io/vault/**
 
 ## How it works
 
@@ -56,13 +57,20 @@ GitHub Pages.
 ## Tech
 
 React + TypeScript + Vite · Tailwind CSS · vite-plugin-pwa · Dexie (IndexedDB) ·
-React Router · Zustand. Editing (WYSIWYG + raw markdown) arrives in a later milestone.
+React Router · Zustand · react-markdown + rehype-sanitize (reading) · Milkdown Crepe
+(visual editing, lazy-loaded).
 
-## Roadmap
+## What it does
 
-- **M0 — Foundation**: scaffold, tooling, CI, Pages deploy, reviewer agent. ✅ baseline
-- **M1 — Data layer**: token/settings, GitHub Trees sync, IndexedDB cache.
-- **M2 — Read & navigate**: vault switcher, folder tree, reading view, wikilinks + backlinks.
-- **M3 — Find**: full-text search, filters, redesigned Active view.
-- **M4 — Write**: CRUD with lossless WYSIWYG↔markdown editing, offline write queue.
-- **M5 — Polish**: install icons, theming, states.
+- **Read & navigate** — vault switcher, folder browsing, a typographic reading view,
+  `[[wikilinks]]` + backlinks.
+- **Find** — instant full-text search with vault/active filters, and a redesigned
+  Active view of in-flight notes.
+- **Write** — create/edit/delete and active-toggle as GitHub commits, with a
+  byte-lossless document model and an offline write queue that flushes on reconnect.
+- **Edit two ways** — a Notion-style visual editor and raw markdown, toggling per note;
+  frontmatter is preserved verbatim and the raw editor is the lossless source of truth.
+- **PWA** — installable, offline reading, light/dark themes, update nudge on new deploys.
+
+Supersedes the retired Android app
+[vault-keep](https://github.com/eme-minuscula/vault-keep).

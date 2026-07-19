@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { Crepe } from '@milkdown/crepe';
 import { restoreVaultSyntax } from '../../lib/markdown/wysiwyg';
+import { isDarkNow } from '../../state/theme';
 
 /** Imperative handle: read the current markdown at save/toggle time. */
 export interface WysiwygHandle {
@@ -47,7 +48,9 @@ export const WysiwygEditor = forwardRef<
         const [{ Crepe }] = await Promise.all([
           import('@milkdown/crepe'),
           import('@milkdown/crepe/theme/common/style.css'),
-          import('@milkdown/crepe/theme/frame.css'),
+          isDarkNow()
+            ? import('@milkdown/crepe/theme/frame-dark.css')
+            : import('@milkdown/crepe/theme/frame.css'),
         ]);
         if (cancelled || !rootRef.current) return;
         const crepe = new Crepe({

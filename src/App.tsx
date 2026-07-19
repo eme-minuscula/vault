@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { useSettings } from './state/settings';
 import { useSync } from './state/sync';
+import { applyTheme, useTheme } from './state/theme';
 import { Onboarding } from './ui/Onboarding';
 import { AppShell } from './ui/AppShell';
 import { Library } from './ui/Library';
@@ -10,6 +11,7 @@ import { ActiveView } from './ui/ActiveView';
 import { SearchView } from './ui/search/SearchView';
 import { EditRoute, NewRoute } from './ui/note/EditRoute';
 import { Settings } from './ui/Settings';
+import { UpdatePrompt } from './ui/UpdatePrompt';
 
 // The note reader pulls in the markdown engine (remark/rehype). Load it only
 // when a note is opened, so the library and onboarding stay lightweight.
@@ -25,6 +27,16 @@ export function App() {
   const run = useSync((s) => s.run);
 
   const connected = configured && hasToken;
+
+  // Keep the theme applied, and follow the system setting when in 'system' mode.
+  const theme = useTheme((s) => s.theme);
+  useEffect(() => {
+    applyTheme(theme);
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => applyTheme(useTheme.getState().theme);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [theme]);
 
   // On load, if already connected, quietly check GitHub for changes (a cheap
   // conditional request — 304 when nothing changed).
@@ -44,12 +56,14 @@ export function App() {
     return (
       <div className="min-h-full bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
         <Onboarding />
+        <UpdatePrompt />
       </div>
     );
   }
 
   return (
     <HashRouter>
+      <UpdatePrompt />
       <AppShell>
         <Routes>
           <Route path="/" element={<Library />} />
