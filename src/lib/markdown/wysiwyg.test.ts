@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { restoreVaultSyntax } from './wysiwyg';
+import { hasExtendedSyntax, restoreVaultSyntax } from './wysiwyg';
 
 describe('restoreVaultSyntax', () => {
   it('un-escapes fully-escaped wikilinks', () => {
@@ -22,5 +22,22 @@ describe('restoreVaultSyntax', () => {
 
   it('leaves already-correct wikilinks untouched', () => {
     expect(restoreVaultSyntax('[[Alice]] and [[Bob|B]]')).toBe('[[Alice]] and [[Bob|B]]');
+  });
+
+  it('restores an escaped callout marker', () => {
+    expect(restoreVaultSyntax('> \\[!note] Heads up')).toBe('> [!note] Heads up');
+  });
+});
+
+describe('hasExtendedSyntax', () => {
+  it('detects callouts, highlights, comments and block refs', () => {
+    expect(hasExtendedSyntax('> [!warning] be careful')).toBe(true);
+    expect(hasExtendedSyntax('some ==highlighted== text')).toBe(true);
+    expect(hasExtendedSyntax('a %%hidden comment%% here')).toBe(true);
+    expect(hasExtendedSyntax('a paragraph ^block-1')).toBe(true);
+  });
+
+  it('returns false for ordinary markdown', () => {
+    expect(hasExtendedSyntax('# Title\n\n- a\n- b\n\n**bold** and [[wikilink]]')).toBe(false);
   });
 });

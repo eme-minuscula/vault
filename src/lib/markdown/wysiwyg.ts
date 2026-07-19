@@ -15,5 +15,21 @@ export function restoreVaultSyntax(md: string): string {
       // Handle the mixed cases where only one side was escaped.
       .replace(/\\\[\[/g, '[[')
       .replace(/\]\\\]/g, ']]')
+      // Callout markers: `> [!note]` gets escaped to `> \[!note]`.
+      .replace(/\\\[!/g, '[!')
   );
+}
+
+// Obsidian-specific syntaxes that the WYSIWYG editor would silently normalize.
+// When a note's body uses any of these, we open it in raw mode by default so it
+// isn't mangled just by viewing + saving.
+const EXTENDED_SYNTAX = [
+  /^\s*>\s*\[!/m, // callouts:  > [!note]
+  /==[^=\n]+==/, // highlights: ==text==
+  /%%[\s\S]*?%%/, // comments:  %%…%%
+  /(?:^|\s)\^[A-Za-z0-9-]+\s*$/m, // block refs: ^id at line end
+];
+
+export function hasExtendedSyntax(body: string): boolean {
+  return EXTENDED_SYNTAX.some((re) => re.test(body));
 }

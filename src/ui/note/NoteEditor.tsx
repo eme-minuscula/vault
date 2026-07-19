@@ -4,6 +4,7 @@ import { currentClient } from '../../state/client';
 import { db } from '../../lib/cache/db';
 import { saveNoteText } from '../../lib/vault/mutations';
 import { splitDoc } from '../../lib/frontmatter/doc';
+import { hasExtendedSyntax } from '../../lib/markdown/wysiwyg';
 import { notePathname } from '../../app/routes';
 import { describeError } from '../errors';
 import { WysiwygEditor, type WysiwygHandle } from './WysiwygEditor';
@@ -30,7 +31,12 @@ export function NoteEditor({
 }) {
   const navigate = useNavigate();
   const [path, setPath] = useState(initialPath);
-  const [mode, setMode] = useState<Mode>('wysiwyg');
+  // Default to Visual, but open notes that use extended Obsidian syntax
+  // (callouts, highlights, comments, block refs) in raw mode so a view+save
+  // can't silently normalize them.
+  const [mode, setMode] = useState<Mode>(() =>
+    hasExtendedSyntax(splitDoc(initialText).body) ? 'raw' : 'wysiwyg',
+  );
   const [status, setStatus] = useState<'idle' | 'saving'>('idle');
   const [error, setError] = useState<string | null>(null);
 
@@ -152,7 +158,7 @@ export function NoteEditor({
 
       <p className="text-xs text-neutral-400">
         {mode === 'wysiwyg'
-          ? 'Visual editing of the body. Frontmatter is preserved; switch to Markdown to edit it.'
+          ? 'Visual editing of the body — formatting may be normalized on save. Frontmatter is preserved; switch to Markdown for exact control.'
           : 'Editing raw markdown, including frontmatter — exactly what gets committed.'}
       </p>
     </div>
