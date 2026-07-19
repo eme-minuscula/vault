@@ -150,6 +150,35 @@ describe('syncVault', () => {
     expect(await database.getMeta('branchEtag')).toBe('W/"e1"');
   });
 
+  it('shields protected paths from prune and refetch', async () => {
+    // First sync seeds A and B.
+    const first = new FakeClient();
+    first.branchQueue = [branch('c1', 't1', 'W/"e1"')];
+    first.treeEntries = [
+      { path: 'w/A.md', type: 'blob', sha: 'a1' },
+      { path: 'w/B.md', type: 'blob', sha: 'b1' },
+    ];
+    first.blobs.set('a1', 'A one');
+    first.blobs.set('b1', 'B one');
+    await syncVault(asClient(first), database, {});
+
+    // Second sync: A is gone from the tree (would prune) and B changed (would
+    // refetch) — but both are protected, so neither happens.
+    const second = new FakeClient();
+    second.branchQueue = [branch('c2', 't2', 'W/"e2"')];
+    second.treeEntries = [{ path: 'w/B.md', type: 'blob', sha: 'b2' }];
+    second.blobs.set('b2', 'B two');
+    const result = await syncVault(asClient(second), database, {
+      protectedPaths: new Set(['w/A.md', 'w/B.md']),
+    });
+
+    expect(second.blobFetches).toEqual([]); // B not refetched
+    expect(result.removed).toBe(0); // A not pruned
+    const paths = (await database.notes.toArray()).map((n) => n.path).sort();
+    expect(paths).toEqual(['w/A.md', 'w/B.md']);
+    expect((await database.notes.get('w/B.md'))?.body).toBe('B one'); // local copy kept
+  });
+
   it('reports progress phases', async () => {
     const fake = new FakeClient();
     fake.branchQueue = [branch('c1', 't1', 'W/"e1"')];

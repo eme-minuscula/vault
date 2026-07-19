@@ -92,6 +92,18 @@ describe('deleteNote', () => {
     expect(await db.notes.get('w/A.md')).toBeUndefined();
   });
 
+  it('cancels the queued create when a note is created then deleted offline', async () => {
+    const off = new FakeClient();
+    off.nextError = net();
+    await saveNoteText(asClient(off), db, 'w/Tmp.md', 'draft', { create: true });
+    expect(await db.outbox.count()).toBe(1);
+
+    const res = await deleteNote(asClient(new FakeClient()), db, 'w/Tmp.md');
+    expect(res.queued).toBe(false);
+    expect(await db.outbox.count()).toBe(0); // no delete queued against a non-existent file
+    expect(await db.notes.get('w/Tmp.md')).toBeUndefined();
+  });
+
   it('queues a delete offline', async () => {
     await seed('w/A.md', 'body', 'blob9');
     const fake = new FakeClient();

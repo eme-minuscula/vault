@@ -112,8 +112,13 @@ export function NoteEditor({
 }
 
 function normalizePath(path: string): string {
-  const trimmed = path.trim().replace(/^\/+/, '');
-  return /\.md$/i.test(trimmed) || trimmed === '' ? trimmed : `${trimmed}.md`;
+  // Drop empty and '.' segments so 'w//x' or 'w/./x' become 'w/x'.
+  const clean = path
+    .trim()
+    .split('/')
+    .filter((s) => s !== '' && s !== '.')
+    .join('/');
+  return /\.md$/i.test(clean) || clean === '' ? clean : `${clean}.md`;
 }
 
 function isValidNotePath(path: string): boolean {

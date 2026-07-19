@@ -68,6 +68,15 @@ export async function deleteNote(
 
   await db.notes.delete(path); // optimistic
 
+  // If this note was created offline and never reached the server, deleting it
+  // is a no-op remotely — just cancel the queued create instead of queueing a
+  // delete against a non-existent file (which would jam the outbox).
+  const pending = await db.outbox.where('path').equals(path).toArray();
+  if (pending.some((o) => o.op === 'put' && o.baseSha === undefined)) {
+    await db.outbox.where('path').equals(path).delete();
+    return { queued: false };
+  }
+
   try {
     await client.deleteFile(path, { message, sha: existing.sha });
     return { queued: false };
