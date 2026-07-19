@@ -33,8 +33,13 @@ export class VaultDb extends Dexie {
   constructor() {
     super(DB_NAME);
     this.version(1).stores({
-      // Indexed fields enable the M3 filters (vault/type/active/date) and tag search.
       notes: 'path, vault, type, active, date, *tags',
+      meta: 'key',
+    });
+    // v2 drops the `active` index: IndexedDB can't index booleans, so it was a
+    // dead (misleading) index. The Active view filters in memory instead.
+    this.version(2).stores({
+      notes: 'path, vault, type, date, *tags',
       meta: 'key',
     });
   }

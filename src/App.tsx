@@ -6,6 +6,8 @@ import { Onboarding } from './ui/Onboarding';
 import { AppShell } from './ui/AppShell';
 import { Library } from './ui/Library';
 import { VaultView } from './ui/VaultView';
+import { ActiveView } from './ui/ActiveView';
+import { SearchView } from './ui/search/SearchView';
 import { Settings } from './ui/Settings';
 
 // The note reader pulls in the markdown engine (remark/rehype). Load it only
@@ -42,6 +44,8 @@ export function App() {
       <AppShell>
         <Routes>
           <Route path="/" element={<Library />} />
+          <Route path="/search" element={<SearchView />} />
+          <Route path="/active" element={<ActiveView />} />
           <Route path="/v/:vault" element={<VaultView />} />
           <Route
             path="/note/*"
