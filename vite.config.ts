@@ -55,7 +55,10 @@ export default defineConfig(({ command }) => {
       tailwindcss(),
       cspPlugin(),
       VitePWA({
-        registerType: 'autoUpdate',
+        // 'prompt' so a new deploy shows an unobtrusive "update" nudge instead of
+        // silently reloading mid-session. The React hook does the registration.
+        registerType: 'prompt',
+        injectRegister: null,
         includeAssets: ['favicon.svg'],
         manifest: {
           name: 'Vault',
@@ -66,14 +69,15 @@ export default defineConfig(({ command }) => {
           display: 'standalone',
           start_url: base,
           scope: base,
-          // SVG icon keeps M0 dependency-free; dedicated PNG + maskable icons land
-          // in the M5 polish pass.
           icons: [
+            { src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+            { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
+            { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
             {
-              src: 'favicon.svg',
-              sizes: 'any',
-              type: 'image/svg+xml',
-              purpose: 'any',
+              src: 'icon-512-maskable.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'maskable',
             },
           ],
         },

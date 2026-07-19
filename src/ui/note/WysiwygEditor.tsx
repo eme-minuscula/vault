@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { Crepe } from '@milkdown/crepe';
 import { restoreVaultSyntax } from '../../lib/markdown/wysiwyg';
+import { isDarkNow } from '../../state/theme';
 
 /** Imperative handle: read the current markdown at save/toggle time. */
 export interface WysiwygHandle {
@@ -47,7 +48,13 @@ export const WysiwygEditor = forwardRef<
         const [{ Crepe }] = await Promise.all([
           import('@milkdown/crepe'),
           import('@milkdown/crepe/theme/common/style.css'),
-          import('@milkdown/crepe/theme/frame.css'),
+          // Theme is chosen at mount. These are global stylesheets, so switching
+          // the app theme and reopening the editor in the same session can leave
+          // both loaded; the editor won't re-theme until reload. Minor and rare —
+          // most users keep one theme. A container-scoped theme would fully fix it.
+          isDarkNow()
+            ? import('@milkdown/crepe/theme/frame-dark.css')
+            : import('@milkdown/crepe/theme/frame.css'),
         ]);
         if (cancelled || !rootRef.current) return;
         const crepe = new Crepe({
