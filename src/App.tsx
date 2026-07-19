@@ -28,15 +28,19 @@ export function App() {
 
   const connected = configured && hasToken;
 
-  // Keep the theme applied, and follow the system setting when in 'system' mode.
+  // Re-apply whenever the user changes the theme setting.
   const theme = useTheme((s) => s.theme);
   useEffect(() => {
     applyTheme(theme);
+  }, [theme]);
+
+  // Follow the OS setting while in 'system' mode. Registered once.
+  useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const onChange = () => applyTheme(useTheme.getState().theme);
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
-  }, [theme]);
+  }, []);
 
   // On load, if already connected, quietly check GitHub for changes (a cheap
   // conditional request — 304 when nothing changed).

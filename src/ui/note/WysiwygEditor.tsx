@@ -48,6 +48,10 @@ export const WysiwygEditor = forwardRef<
         const [{ Crepe }] = await Promise.all([
           import('@milkdown/crepe'),
           import('@milkdown/crepe/theme/common/style.css'),
+          // Theme is chosen at mount. These are global stylesheets, so switching
+          // the app theme and reopening the editor in the same session can leave
+          // both loaded; the editor won't re-theme until reload. Minor and rare —
+          // most users keep one theme. A container-scoped theme would fully fix it.
           isDarkNow()
             ? import('@milkdown/crepe/theme/frame-dark.css')
             : import('@milkdown/crepe/theme/frame.css'),
