@@ -133,13 +133,18 @@ function firstHeading(body: string): string | null {
   return null;
 }
 
-function makeSnippet(body: string): string {
-  const text = body
+/** Collapse markdown into a readable one-line plain-text approximation. */
+export function toPlainText(md: string): string {
+  return md
     .replace(/^#+\s+/gm, '') // strip heading markers
-    .replace(/[*_`>#-]/g, ' ') // strip common markdown punctuation
     .replace(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, '$1') // wikilink → label
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1') // md link → text
+    .replace(/[*_`>#]/g, ' ') // strip common markdown punctuation
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function makeSnippet(body: string): string {
+  const text = toPlainText(body);
   return text.length > SNIPPET_MAX ? `${text.slice(0, SNIPPET_MAX).trimEnd()}…` : text;
 }

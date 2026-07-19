@@ -1,5 +1,6 @@
 import type { NoteRecord } from '../cache/db';
 import type { VaultId } from '../vault/path';
+import { toPlainText } from '../frontmatter/parse';
 
 /**
  * Small, dependency-free full-text search over the cached notes.
@@ -89,21 +90,21 @@ export function tokenize(query: string): string[] {
     .filter(Boolean);
 }
 
-/** A body excerpt centered on the first matching term, for result previews. */
+/** A plain-text body excerpt centered on the first matching term, for previews. */
 export function excerpt(body: string, query: string, radius = 90): string {
+  const text = toPlainText(body);
   const terms = tokenize(query);
-  const lower = body.toLowerCase();
+  const lower = text.toLowerCase();
   let at = -1;
   for (const t of terms) {
     at = lower.indexOf(t);
     if (at !== -1) break;
   }
   if (at === -1) {
-    const head = body.trim().replace(/\s+/g, ' ');
-    return head.length > radius * 2 ? `${head.slice(0, radius * 2)}…` : head;
+    return text.length > radius * 2 ? `${text.slice(0, radius * 2)}…` : text;
   }
   const start = Math.max(0, at - radius);
-  const end = Math.min(body.length, at + radius);
-  const slice = body.slice(start, end).replace(/\s+/g, ' ').trim();
-  return `${start > 0 ? '…' : ''}${slice}${end < body.length ? '…' : ''}`;
+  const end = Math.min(text.length, at + radius);
+  const slice = text.slice(start, end).trim();
+  return `${start > 0 ? '…' : ''}${slice}${end < text.length ? '…' : ''}`;
 }
