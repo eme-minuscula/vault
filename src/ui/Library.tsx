@@ -3,7 +3,10 @@ import { useActiveNotes, useVaultCounts } from '../state/notes';
 import { VAULT_LABELS, type VaultId } from '../lib/vault/path';
 import { vaultHref } from '../app/routes';
 
-const ORDER: VaultId[] = ['w', 'm', 'r', '_inbox', 'other'];
+// Inbox is intentionally not a Library card: `_inbox` captures are flagged
+// active, so they surface in the Active view (and search) — a separate Inbox
+// section would just duplicate that.
+const ORDER: VaultId[] = ['w', 'm', 'r', 'other'];
 
 const DESCRIPTIONS: Record<VaultId, string> = {
   w: 'Work, projects, people, learning',

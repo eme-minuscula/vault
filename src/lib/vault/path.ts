@@ -26,6 +26,18 @@ export function isMarkdown(path: string): boolean {
   return /\.md$/i.test(path);
 }
 
+/**
+ * Paths that must never be synced or displayed:
+ * - anything inside a dot-folder (.stversions Syncthing backups, .obsidian,
+ *   .claude, .github) — these are tooling/version-history, not notes;
+ * - any `Creds.md`, which the vault marks as opaque (never read or shown).
+ */
+export function isExcludedPath(path: string): boolean {
+  if (path.split('/').some((seg) => seg.startsWith('.'))) return true;
+  if (/(^|\/)creds\.md$/i.test(path)) return true;
+  return false;
+}
+
 /** Human label for a vault id, used in navigation and the vault switcher. */
 export const VAULT_LABELS: Record<VaultId, string> = {
   w: 'Work',

@@ -53,6 +53,8 @@ describe('syncVault', () => {
       { path: 'm/Journal.md', type: 'blob', sha: 'b2' },
       { path: 'w/PrOps/Knowledge/LennysPodcast/ep.md', type: 'blob', sha: 'b3' },
       { path: 'r/attachments/pic.png', type: 'blob', sha: 'b4' },
+      { path: '.stversions/w/Old.md', type: 'blob', sha: 'b5' }, // dot-folder → excluded
+      { path: 'w/Projects/HA/Creds.md', type: 'blob', sha: 'b6' }, // Creds → excluded
       { path: 'w', type: 'tree', sha: 'tdir' },
     ];
     fake.blobs.set('b1', '---\ntype: learning\nactive: true\n---\n# Work note\nbody');
