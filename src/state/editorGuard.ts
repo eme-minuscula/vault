@@ -20,6 +20,15 @@ export function useEditorOpen(): boolean {
 }
 
 /**
+ * Non-reactive read of the same flag. Callers that act on the guard (rather than
+ * render from it) must use this: a sibling editor acquires the guard in its own
+ * effect, so a value captured during render can be stale for one commit.
+ */
+export function isEditorOpen(): boolean {
+  return useEditorGuardStore.getState().open > 0;
+}
+
+/**
  * Marks an editor as open for as long as the component is mounted, so the
  * service-worker updater never reloads the page out from under an unsaved note.
  */
