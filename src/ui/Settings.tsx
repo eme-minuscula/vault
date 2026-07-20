@@ -147,6 +147,14 @@ export function Settings() {
         </button>
       </section>
 
+      <section>
+        <h2 className="text-sm font-medium">About</h2>
+        <p className="mt-1 text-sm text-neutral-500">
+          Build <code className="font-mono text-xs">{__APP_BUILD__}</code> · updates apply
+          automatically.
+        </p>
+      </section>
+
       <section className="border-t border-neutral-200 pt-6 dark:border-neutral-800">
         <h2 className="text-sm font-medium">Disconnect</h2>
         <p className="mt-1 text-sm text-neutral-500">

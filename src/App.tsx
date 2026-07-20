@@ -56,38 +56,41 @@ export function App() {
     return () => window.removeEventListener('online', onOnline);
   }, [connected, run]);
 
-  if (!connected) {
-    return (
-      <div className="min-h-full bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
-        <Onboarding />
-        <UpdatePrompt />
-      </div>
-    );
-  }
-
   return (
-    <HashRouter>
+    <>
+      {/* Kept at a stable position in the tree: remounting it across the
+          onboarding→connected transition would re-register the service worker
+          and leak a second update-poll interval. */}
       <UpdatePrompt />
-      <AppShell>
-        <Routes>
-          <Route path="/" element={<Library />} />
-          <Route path="/search" element={<SearchView />} />
-          <Route path="/active" element={<ActiveView />} />
-          <Route path="/new" element={<NewRoute />} />
-          <Route path="/edit/*" element={<EditRoute />} />
-          <Route path="/v/:vault" element={<VaultView />} />
-          <Route
-            path="/note/*"
-            element={
-              <Suspense fallback={<p className="text-sm text-neutral-400">Loading…</p>}>
-                <NoteView />
-              </Suspense>
-            }
-          />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AppShell>
-    </HashRouter>
+
+      {!connected ? (
+        <div className="min-h-full bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
+          <Onboarding />
+        </div>
+      ) : (
+        <HashRouter>
+          <AppShell>
+            <Routes>
+              <Route path="/" element={<Library />} />
+              <Route path="/search" element={<SearchView />} />
+              <Route path="/active" element={<ActiveView />} />
+              <Route path="/new" element={<NewRoute />} />
+              <Route path="/edit/*" element={<EditRoute />} />
+              <Route path="/v/:vault" element={<VaultView />} />
+              <Route
+                path="/note/*"
+                element={
+                  <Suspense fallback={<p className="text-sm text-neutral-400">Loading…</p>}>
+                    <NoteView />
+                  </Suspense>
+                }
+              />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </AppShell>
+        </HashRouter>
+      )}
+    </>
   );
 }
