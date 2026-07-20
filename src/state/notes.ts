@@ -87,7 +87,12 @@ export async function ensureAttachmentDataUri(row: AttachmentRecord): Promise<st
     if (!client) throw new Error('Not connected');
     const base64 = await client.getBlobBase64(row.sha);
     const dataUri = `data:${mimeFor(row.filename)};base64,${base64}`;
-    await db().attachments.update(row.path, { dataUri });
+    // Git blob SHAs are content-addressed, so identical images at different paths
+    // share a SHA — write the loaded URI to every row with this SHA, not just one,
+    // so a duplicate embed doesn't get stuck on the loading placeholder.
+    await db()
+      .attachments.filter((a) => a.sha === row.sha)
+      .modify({ dataUri });
     return dataUri;
   })();
   inFlight.set(row.sha, load);

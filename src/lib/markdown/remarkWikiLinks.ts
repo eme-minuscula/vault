@@ -7,7 +7,7 @@ import { parseWikiTarget } from '../vault/links';
  *
  * - Resolved link  → internal hash link (`#/note/<path>`), navigable in-app.
  * - Unresolved     → link to `#missing`, rendered as a distinct "broken" style.
- * - Image embed    → an inline-code placeholder (attachment rendering lands later).
+ * - Image embed    → an image node (the renderer resolves it to a vault attachment).
  * - Note embed     → treated as an ordinary internal link.
  *
  * `resolve` maps a bare target (already stripped of `#heading`/`|label`) to a

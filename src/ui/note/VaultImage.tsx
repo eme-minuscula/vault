@@ -21,7 +21,7 @@ export function VaultImage({
   const raw = src ?? '';
   const external = isExternalSrc(raw);
   const path = useMemo(() => (external ? null : resolve(raw)), [external, raw, resolve]);
-  const { dataUri, loading, error } = useAttachment(path ?? undefined);
+  const { dataUri, loading } = useAttachment(path ?? undefined);
 
   if (external) {
     return (
@@ -44,9 +44,7 @@ export function VaultImage({
   if (loading) {
     return <Placeholder text={`Loading ${label}…`} />;
   }
-  if (error || !path) {
-    return <Placeholder text={`🖼 ${label}`} muted />;
-  }
+  // Unresolved (not in this vault) or failed to load — inert placeholder either way.
   return <Placeholder text={`🖼 ${label}`} muted />;
 }
 
