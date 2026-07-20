@@ -20,6 +20,17 @@ export interface NoteRecord {
   updatedAt: number; // local cache timestamp (ms)
 }
 
+/** An image attachment index entry. `dataUri` is filled lazily on first display. */
+export interface AttachmentRecord {
+  path: string;
+  sha: string;
+  vault: VaultId;
+  filename: string; // includes extension
+  /** base64 data URI, cached after first load (for offline + speed). */
+  dataUri?: string;
+  updatedAt: number;
+}
+
 /** A queued write, held while offline and flushed when back online. */
 export interface OutboxOp {
   id?: number;
@@ -50,6 +61,7 @@ export class VaultDb extends Dexie {
   notes!: EntityTable<NoteRecord, 'path'>;
   meta!: EntityTable<MetaRecord, 'key'>;
   outbox!: EntityTable<OutboxOp, 'id'>;
+  attachments!: EntityTable<AttachmentRecord, 'path'>;
 
   constructor() {
     super(DB_NAME);
@@ -69,6 +81,13 @@ export class VaultDb extends Dexie {
       meta: 'key',
       outbox: '++id, path',
     });
+    // v4 adds the image attachment index.
+    this.version(4).stores({
+      notes: 'path, vault, type, date, *tags',
+      meta: 'key',
+      outbox: '++id, path',
+      attachments: 'path, vault, filename',
+    });
   }
 
   async getMeta(key: string): Promise<string | null> {
@@ -82,10 +101,11 @@ export class VaultDb extends Dexie {
 
   /** Wipe all cached content (e.g. on sign-out or repo switch). */
   async clearAll(): Promise<void> {
-    await this.transaction('rw', this.notes, this.meta, this.outbox, async () => {
+    await this.transaction('rw', this.notes, this.meta, this.outbox, this.attachments, async () => {
       await this.notes.clear();
       await this.meta.clear();
       await this.outbox.clear();
+      await this.attachments.clear();
     });
   }
 }

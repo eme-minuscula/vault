@@ -4,6 +4,9 @@ import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
 import { remarkWikiLinks, type WikiResolver } from '../../lib/markdown/remarkWikiLinks';
 import { isInternalNoteHref, MISSING_HREF } from '../../app/routes';
+import { VaultImage } from './VaultImage';
+
+export type AttachmentResolver = (src: string) => string | null;
 
 /**
  * Renders note markdown safely.
@@ -13,15 +16,32 @@ import { isInternalNoteHref, MISSING_HREF } from '../../app/routes';
  * External links open in a new tab with `rel="noreferrer noopener"`. Internal
  * wikilinks become hash routes; unresolved ones render as inert "broken" text.
  */
-export function Markdown({ body, resolve }: { body: string; resolve: WikiResolver }) {
+export function Markdown({
+  body,
+  resolve,
+  resolveAttachment = () => null,
+}: {
+  body: string;
+  resolve: WikiResolver;
+  resolveAttachment?: AttachmentResolver;
+}) {
   const remarkPlugins = useMemo(() => [remarkGfm, remarkWikiLinks(resolve)], [resolve]);
+  const components = useMemo(
+    () => ({
+      a: Anchor,
+      img: (props: ComponentPropsWithoutRef<'img'>) => (
+        <VaultImage src={props.src} alt={props.alt} resolve={resolveAttachment} />
+      ),
+    }),
+    [resolveAttachment],
+  );
 
   return (
     <div className="prose prose-neutral dark:prose-invert prose-headings:font-semibold prose-a:font-normal max-w-none">
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         rehypePlugins={[rehypeSanitize]}
-        components={{ a: Anchor }}
+        components={components}
       >
         {body}
       </ReactMarkdown>

@@ -65,6 +65,18 @@ export class GitHubClient {
     return blob.content;
   }
 
+  /** Raw base64 content of a blob (for binary assets like images). */
+  async getBlobBase64(sha: string): Promise<string> {
+    const res = await this.request(`/repos/${this.cfg.owner}/${this.cfg.repo}/git/blobs/${sha}`);
+    const blob = (await res.json()) as BlobResponse;
+    // The blobs API returns base64 for blobs up to 100MB; fail loudly rather than
+    // build a corrupt data URI if that ever isn't the case.
+    if (blob.encoding !== 'base64') {
+      throw new GitHubError('unknown', `Unexpected blob encoding: ${blob.encoding}`);
+    }
+    return blob.content.replace(/\s/g, '');
+  }
+
   /** File metadata + content by path (used to obtain the current SHA before a write). */
   async getContent(path: string): Promise<ContentResponse> {
     const res = await this.request(
