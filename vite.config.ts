@@ -62,12 +62,13 @@ export default defineConfig(({ command }) => {
       tailwindcss(),
       cspPlugin(),
       VitePWA({
-        // 'autoUpdate': a new deploy takes effect on its own. 'prompt' mode left
-        // the app pinned to a stale build whenever the update toast was missed or
-        // dismissed — for a single-user app that ships often, silently converging
-        // on the latest version is the safer default. The React hook registers the
-        // worker and polls for updates so a long-lived tab doesn't go stale.
-        registerType: 'autoUpdate',
+        // Deliberately 'prompt', NOT 'autoUpdate': autoUpdate hard-reloads the page
+        // the moment a new worker activates, which would discard whatever is in the
+        // editor (note state lives in memory, there is no autosave). We keep manual
+        // control and apply the update ourselves as soon as it is *safe* — see
+        // src/ui/UpdatePrompt.tsx — so the app still converges on the latest build
+        // without ever reloading mid-edit.
+        registerType: 'prompt',
         injectRegister: null,
         includeAssets: ['favicon.svg'],
         manifest: {

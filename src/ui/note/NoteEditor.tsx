@@ -5,6 +5,7 @@ import { db } from '../../lib/cache/db';
 import { saveNoteText } from '../../lib/vault/mutations';
 import { splitDoc } from '../../lib/frontmatter/doc';
 import { hasExtendedSyntax } from '../../lib/markdown/wysiwyg';
+import { useHoldEditorGuard } from '../../state/editorGuard';
 import { notePathname } from '../../app/routes';
 import { describeError } from '../errors';
 import { WysiwygEditor, type WysiwygHandle } from './WysiwygEditor';
@@ -30,6 +31,8 @@ export function NoteEditor({
   backTo: string;
 }) {
   const navigate = useNavigate();
+  // Block service-worker-driven reloads while this editor is mounted.
+  useHoldEditorGuard();
   const [path, setPath] = useState(initialPath);
   // Default to Visual, but open notes that use extended Obsidian syntax
   // (callouts, highlights, comments, block refs) in raw mode so a view+save
