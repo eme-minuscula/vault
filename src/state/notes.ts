@@ -44,9 +44,15 @@ export function useActiveNotes(): NoteRecord[] | undefined {
   }, []);
 }
 
-/** Number of writes queued in the offline outbox. */
-export function usePendingCount(): number {
-  return useLiveQuery(() => db().outbox.count(), [], 0) ?? 0;
+/**
+ * Number of writes queued in the offline outbox.
+ *
+ * `enabled` guards the `db()` call: when false we never touch IndexedDB, so a
+ * component mounted before connecting (or after "Disconnect & clear cache")
+ * can't recreate the database that was just deleted.
+ */
+export function usePendingCount(enabled = true): number {
+  return useLiveQuery(() => (enabled ? db().outbox.count() : 0), [enabled], 0) ?? 0;
 }
 
 /** Per-vault note counts for the library overview. */

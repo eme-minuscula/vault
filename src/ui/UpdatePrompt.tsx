@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
-import { useEditorOpen } from '../state/editorGuard';
+import { isEditorOpen, useEditorOpen } from '../state/editorGuard';
 import { usePendingCount } from '../state/notes';
+import { useSettings } from '../state/settings';
 
 /** How often a long-lived tab asks the browser to look for a new deploy. */
 const UPDATE_CHECK_MS = 30 * 60_000;
@@ -43,12 +44,21 @@ export function UpdatePrompt() {
     };
   }, [registration]);
 
+  // This component is mounted before the user connects, so only read the outbox
+  // once there's a vault — otherwise the query would recreate the IndexedDB that
+  // "Disconnect & clear cache" just deleted.
+  const connected = useSettings((s) => s.configured && s.token.length > 0);
   const editorOpen = useEditorOpen();
-  const pendingWrites = usePendingCount();
+  const pendingWrites = usePendingCount(connected);
   const safeToReload = !editorOpen && pendingWrites === 0;
 
   useEffect(() => {
-    if (needRefresh && safeToReload) void updateServiceWorker(true);
+    if (!needRefresh || !safeToReload) return;
+    // Re-check the guard here, not just from the rendered value: an editor mounted
+    // in the same commit acquires the guard in its own effect, so the render-time
+    // value can be one commit stale — and applying then would reload over it.
+    if (isEditorOpen()) return;
+    void updateServiceWorker(true);
   }, [needRefresh, safeToReload, updateServiceWorker]);
 
   // Only surfaces while it isn't safe to apply the update silently.
