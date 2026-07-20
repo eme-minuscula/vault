@@ -48,16 +48,26 @@ export default defineConfig(({ command }) => {
   // Override either with VITE_BASE.
   const base = process.env.VITE_BASE ?? (command === 'build' ? '/vault/' : '/');
 
+  // Short build id so the running version is visible in Settings — makes a stale
+  // cached build obvious instead of a mystery. CI provides the commit SHA.
+  const buildId = (process.env.GITHUB_SHA ?? 'dev').slice(0, 7);
+
   return {
     base,
+    define: {
+      __APP_BUILD__: JSON.stringify(buildId),
+    },
     plugins: [
       react(),
       tailwindcss(),
       cspPlugin(),
       VitePWA({
-        // 'prompt' so a new deploy shows an unobtrusive "update" nudge instead of
-        // silently reloading mid-session. The React hook does the registration.
-        registerType: 'prompt',
+        // 'autoUpdate': a new deploy takes effect on its own. 'prompt' mode left
+        // the app pinned to a stale build whenever the update toast was missed or
+        // dismissed — for a single-user app that ships often, silently converging
+        // on the latest version is the safer default. The React hook registers the
+        // worker and polls for updates so a long-lived tab doesn't go stale.
+        registerType: 'autoUpdate',
         injectRegister: null,
         includeAssets: ['favicon.svg'],
         manifest: {

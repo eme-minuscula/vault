@@ -1,11 +1,28 @@
 import { useRegisterSW } from 'virtual:pwa-register/react';
 
-/** Unobtrusive toast shown when a new app version has been deployed. */
+/** How often a long-lived tab asks the browser to check for a new deploy. */
+const UPDATE_CHECK_MS = 60_000;
+
+/**
+ * Registers the service worker and keeps the app on the latest deploy.
+ *
+ * The worker is in `autoUpdate` mode, so a new version applies itself rather than
+ * waiting on a click (a missed prompt used to strand the app on a stale build).
+ * We additionally poll, so a tab left open for days still picks up a deploy. The
+ * toast below is a fallback for the rare case the worker reports it is waiting.
+ */
 export function UpdatePrompt() {
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
-  } = useRegisterSW();
+  } = useRegisterSW({
+    onRegisteredSW(_url, registration) {
+      if (!registration) return;
+      setInterval(() => {
+        void registration.update();
+      }, UPDATE_CHECK_MS);
+    },
+  });
 
   if (!needRefresh) return null;
 
