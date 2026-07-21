@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type { VaultId } from '../vault/path';
-import { clearInFlight } from '../vault/attachmentLoader';
+import { clearInFlight } from '../inFlightRegistry';
 
 /** One cached note. `path` is the repo-relative path and the primary key. */
 export interface NoteRecord {
@@ -163,8 +163,10 @@ export class VaultDb extends Dexie {
 
   /** Wipe all cached content (e.g. on sign-out or repo switch). */
   async clearAll(): Promise<void> {
-    // Abandon in-flight image loads first, so their bytes can't land after the wipe.
-    clearInFlight(this);
+    // Abandon in-flight image loads first. The loader checks the registry before
+    // writing, so a fetch still running during the wipe discards its result
+    // instead of resurrecting bytes into the cleared cache.
+    clearInFlight(this.name);
     await this.transaction(
       'rw',
       this.notes,

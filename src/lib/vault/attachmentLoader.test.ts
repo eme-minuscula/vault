@@ -117,6 +117,30 @@ describe('evictBlobs', () => {
     expect(await db.attachmentBlobs.count()).toBe(3);
   });
 
+  it('stays correct when an LRU touch lands during eviction', async () => {
+    // usedAt is the leading index component, so a touch *moves* a row. If the two
+    // key cursors ran in separate transactions, the lists would misalign and we
+    // could delete a blob based on another row's timestamp.
+    const now = LATER;
+    await db.attachmentBlobs.bulkPut([
+      blob('oldest', 100, now - 10 * EVICTION_GRACE_MS),
+      blob('older', 100, now - 9 * EVICTION_GRACE_MS),
+      blob('recent', 100, now - 100),
+    ]);
+
+    const evicting = evictBlobs(db, 150, now);
+    // Race a touch against it, exactly as a cache hit would.
+    const touching = db.attachmentBlobs.update('older', { usedAt: now });
+    const [dropped] = await Promise.all([evicting, touching]);
+
+    // Whatever the interleaving, the freshly-used blob must survive and only
+    // genuinely stale entries may go.
+    expect(await db.attachmentBlobs.get('recent')).toBeDefined();
+    expect(dropped).toBeGreaterThanOrEqual(1);
+    const survivors = await db.attachmentBlobs.orderBy('sha').primaryKeys();
+    expect(survivors).not.toContain('oldest'); // the true LRU victim
+  });
+
   it('reads sizes without materializing any cached image bytes', async () => {
     // Guards the regression that made eviction load the whole cache into memory.
     await db.attachmentBlobs.bulkPut([blob('x', 10, 1), blob('y', 10, 2)]);

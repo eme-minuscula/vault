@@ -98,9 +98,12 @@ export function useAttachment(path: string | undefined): AttachmentState {
     [row?.sha],
   );
   const [error, setError] = useState(false);
-  // SHAs this component has already tried. Prevents an endless fetch loop if a
-  // blob disappears again after loading (e.g. evicted under cache pressure):
+  // SHAs this component has already loaded once. Prevents an endless fetch loop
+  // if a blob disappears again afterwards (e.g. evicted under cache pressure):
   // without it, the blob query firing null would re-enter this effect forever.
+  // Marked when a load *settles*, not when it starts — otherwise React's
+  // StrictMode double-invoke would flag the second run as a repeat while the
+  // first fetch is still in flight.
   const attempted = useRef(new Set<string>());
 
   useEffect(() => {
@@ -111,11 +114,15 @@ export function useAttachment(path: string | undefined): AttachmentState {
       return;
     }
     setError(false);
-    attempted.current.add(row.sha);
+    const sha = row.sha;
     let cancelled = false;
-    ensureAttachmentDataUri(client, db(), row).catch(() => {
-      if (!cancelled) setError(true);
-    });
+    ensureAttachmentDataUri(client, db(), row)
+      .catch(() => {
+        if (!cancelled) setError(true);
+      })
+      .finally(() => {
+        attempted.current.add(sha);
+      });
     return () => {
       cancelled = true;
     };

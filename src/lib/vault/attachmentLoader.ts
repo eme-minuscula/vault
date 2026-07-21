@@ -1,5 +1,6 @@
 import type { GitHubClient } from '../github/client';
 import type { AttachmentRecord, VaultDb } from '../cache/db';
+import { endInFlight, flightKey, getInFlight, isInFlight, setInFlight } from '../inFlightRegistry';
 import { mimeFor } from './attachments';
 
 /**
@@ -16,8 +17,12 @@ import { mimeFor } from './attachments';
 
 /**
  * Cap on cached image bytes. Measured in data-URI characters; IndexedDB stores
- * strings as UTF-16, so the on-disk footprint is roughly twice this. Generous
- * for a personal vault, bounded on a phone.
+ * strings as UTF-16, so the on-disk footprint is roughly twice this.
+ *
+ * The cap is soft: blobs inside the grace window below are never evicted, so a
+ * single note whose embeds exceed the budget will sit over it until they age
+ * out. That's the intended trade — a temporarily oversized cache is much better
+ * than evicting an image that is still on screen and refetching it in a loop.
  */
 export const BLOB_CACHE_MAX_BYTES = 40 * 1024 * 1024;
 
@@ -27,20 +32,6 @@ export const BLOB_CACHE_MAX_BYTES = 40 * 1024 * 1024;
  * and the live query would immediately re-fetch it — an endless request loop.
  */
 export const EVICTION_GRACE_MS = 60_000;
-
-// In-flight loads, keyed by database *and* SHA: two VaultDb instances (or a
-// wipe-and-recreate) must not share entries, or bytes from a load started before
-// "Disconnect & clear cache" could land in the freshly cleared database.
-const inFlight = new Map<string, Promise<string>>();
-
-const flightKey = (db: VaultDb, sha: string) => `${db.name}:${sha}`;
-
-/** Abandon in-flight loads for a database — called when its contents are wiped. */
-export function clearInFlight(db: { name: string }): void {
-  for (const key of [...inFlight.keys()]) {
-    if (key.startsWith(`${db.name}:`)) inFlight.delete(key);
-  }
-}
 
 /** Cached data URI for an attachment, fetching and storing it on first use. */
 export async function ensureAttachmentDataUri(
@@ -55,13 +46,17 @@ export async function ensureAttachmentDataUri(
     return cached.dataUri;
   }
 
-  const key = flightKey(db, row.sha);
-  const existing = inFlight.get(key);
+  const key = flightKey(db.name, row.sha);
+  const existing = getInFlight(key);
   if (existing) return existing;
 
   const load = (async () => {
     const base64 = await client.getBlobBase64(row.sha);
     const dataUri = `data:${mimeFor(row.filename)};base64,${base64}`;
+    // The database may have been wiped while we were fetching ("Disconnect &
+    // clear cache"). Writing now would resurrect private bytes into a cache the
+    // user just cleared, so drop the result instead.
+    if (!isInFlight(key)) return dataUri;
     await db.attachmentBlobs.put({
       sha: row.sha,
       dataUri,
@@ -72,11 +67,11 @@ export async function ensureAttachmentDataUri(
     return dataUri;
   })();
 
-  inFlight.set(key, load);
+  setInFlight(key, load);
   try {
     return await load;
   } finally {
-    inFlight.delete(key);
+    endInFlight(key);
   }
 }
 
@@ -92,29 +87,36 @@ export async function evictBlobs(
   maxBytes = BLOB_CACHE_MAX_BYTES,
   now = Date.now(),
 ): Promise<number> {
-  // Both scans walk the same [usedAt+size] index in the same order, so entry i
-  // of each refers to the same row. Key-only cursors: no values are read.
-  const ordered = db.attachmentBlobs.orderBy('[usedAt+size]');
-  const keys = (await ordered.keys()) as unknown as [number, number][];
-  let total = 0;
-  for (const [, size] of keys) total += size;
-  if (total <= maxBytes) return 0;
+  // One transaction around both cursors and the delete. `.keys()` and
+  // `.primaryKeys()` are separate operations, and `usedAt` is the leading index
+  // component — so an LRU touch landing between them would reorder the index and
+  // misalign the two lists, letting us delete a blob based on another row's
+  // timestamp (including one inside the grace window, still on screen).
+  return db.transaction('rw', db.attachmentBlobs, async () => {
+    const keys = (await db.attachmentBlobs.orderBy('[usedAt+size]').keys()) as unknown as [
+      number,
+      number,
+    ][];
+    let total = 0;
+    for (const [, size] of keys) total += size;
+    if (total <= maxBytes) return 0;
 
-  const shas = await db.attachmentBlobs.orderBy('[usedAt+size]').primaryKeys();
+    const shas = await db.attachmentBlobs.orderBy('[usedAt+size]').primaryKeys();
 
-  const doomed: string[] = [];
-  for (let i = 0; i < keys.length && total > maxBytes; i++) {
-    const entry = keys[i];
-    const sha = shas[i];
-    if (!entry || sha === undefined) break;
-    const [usedAt, size] = entry;
-    // Ascending by usedAt, so once we reach a recently-used blob everything
-    // after it is newer too — stop rather than evict something on screen.
-    if (usedAt > now - EVICTION_GRACE_MS) break;
-    doomed.push(sha);
-    total -= size;
-  }
+    const doomed: string[] = [];
+    for (let i = 0; i < keys.length && total > maxBytes; i++) {
+      const entry = keys[i];
+      const sha = shas[i];
+      if (!entry || sha === undefined) break;
+      const [usedAt, size] = entry;
+      // Ascending by usedAt, so once we reach a recently-used blob everything
+      // after it is newer too — stop rather than evict something on screen.
+      if (usedAt > now - EVICTION_GRACE_MS) break;
+      doomed.push(sha);
+      total -= size;
+    }
 
-  if (doomed.length) await db.attachmentBlobs.bulkDelete(doomed);
-  return doomed.length;
+    if (doomed.length) await db.attachmentBlobs.bulkDelete(doomed);
+    return doomed.length;
+  });
 }
