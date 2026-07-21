@@ -32,6 +32,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Re-verify before publishing. CI already gates pull requests, but a direct
+      # push to main reaches this job without ever having run them — and this is
+      # the job that puts code in front of the user.
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
       - name: Build
         run: npm run build
 

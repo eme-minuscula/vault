@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import { fileURLToPath } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -57,6 +58,16 @@ export default defineConfig(({ command }) => {
     define: {
       __APP_BUILD__: JSON.stringify(buildId),
     },
+    resolve: {
+      alias: [
+        {
+          // The editor's stylesheet transitively imports KaTeX, pulling in 59 font
+          // files for a feature we disable (Crepe.Feature.Latex: false). Stub it out.
+          find: /^katex\/dist\/katex(\.min)?\.css$/,
+          replacement: fileURLToPath(new URL('./src/styles/no-katex.css', import.meta.url)),
+        },
+      ],
+    },
     plugins: [
       react(),
       tailwindcss(),
@@ -70,7 +81,6 @@ export default defineConfig(({ command }) => {
         // without ever reloading mid-edit.
         registerType: 'prompt',
         injectRegister: null,
-        includeAssets: ['favicon.svg'],
         manifest: {
           name: 'Vault',
           short_name: 'Vault',
@@ -100,7 +110,9 @@ export default defineConfig(({ command }) => {
           // The WYSIWYG editor bundle is large and rarely the first thing used, so
           // keep it out of the install-time precache and fetch it on demand (then
           // cache it, so offline editing still works after the first use).
-          globIgnores: ['**/editor-*.js', '**/editor-*.css'],
+          // The icons are already precached via the web manifest, so exclude them
+          // here or each lands in the manifest twice.
+          globIgnores: ['**/editor-*.js', '**/editor-*.css', 'favicon.svg', 'icon-*.png'],
           runtimeCaching: [
             {
               urlPattern: ({ url }) => /\/editor-[^/]+\.(js|css)$/.test(url.pathname),
@@ -113,7 +125,6 @@ export default defineConfig(({ command }) => {
             },
           ],
           navigateFallback: `${base}index.html`,
-          navigateFallbackDenylist: [/^\/api/],
         },
         devOptions: {
           enabled: false,

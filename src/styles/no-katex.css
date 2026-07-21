@@ -1,0 +1,12 @@
+/*
+ * Intentionally empty.
+ *
+ * The WYSIWYG editor (Milkdown Crepe) ships `theme/common/style.css`, which
+ * @imports `latex.css`, which @imports KaTeX's stylesheet — dragging in 59 font
+ * files (~1.1 MB, of which ~292 KB of .woff2 were landing in the service-worker
+ * precache). We disable the LaTeX feature (`Crepe.Feature.Latex: false`), so none
+ * of it can ever render. vite.config.ts aliases the KaTeX stylesheet here to keep
+ * those fonts out of the build.
+ *
+ * If LaTeX support is ever wanted, delete the alias and this file.
+ */
