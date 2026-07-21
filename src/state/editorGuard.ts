@@ -29,13 +29,15 @@ export function isEditorOpen(): boolean {
 }
 
 /**
- * Marks an editor as open for as long as the component is mounted, so the
- * service-worker updater never reloads the page out from under an unsaved note.
+ * Holds the guard while `active`, so the service-worker updater never reloads the
+ * page out from under unsaved content or an in-flight write. Editors hold it for
+ * their whole lifetime; action buttons hold it only while a request is running.
  */
-export function useHoldEditorGuard(): void {
+export function useHoldEditorGuard(active = true): void {
   useEffect(() => {
+    if (!active) return;
     const { acquire, release } = useEditorGuardStore.getState();
     acquire();
     return release;
-  }, []);
+  }, [active]);
 }
