@@ -116,7 +116,9 @@ export function Settings() {
             Full re-sync
           </button>
         </div>
-        {lastResult && !syncing && status !== 'error' && (
+        {/* A sync can succeed while a queued write failed to flush, so suppress the
+            success line whenever there's an error to show instead. */}
+        {lastResult && !syncing && status !== 'error' && !error && (
           <p className="mt-2 text-sm text-neutral-500">
             {lastResult.upToDate
               ? 'Already up to date.'

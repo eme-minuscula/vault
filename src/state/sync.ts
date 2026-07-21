@@ -51,7 +51,7 @@ export const useSync = create<SyncState>((set, get) => ({
       // Push queued writes BEFORE reconciling, so the sync's prune/refetch never
       // fights a local write that hasn't reached GitHub yet. Anything that fails
       // to flush stays in the outbox and is shielded from the reconcile pass.
-      await flushOutbox(client, db());
+      const flush = await flushOutbox(client, db());
       const stillPending = new Set((await db().outbox.toArray()).map((o) => o.path));
       const result = await syncVault(client, db(), {
         ignoredPrefixes,
@@ -65,7 +65,9 @@ export const useSync = create<SyncState>((set, get) => ({
         progress: null,
         lastResult: result,
         lastSyncAt: Date.now(),
-        error: null,
+        // A queued write that can't be flushed keeps its note shielded from
+        // reconcile, so surface it rather than reporting an unqualified success.
+        error: flush.error ? toSyncError(flush.error) : null,
       });
     } catch (err) {
       set({ status: 'error', progress: null, error: toSyncError(err) });
