@@ -1,6 +1,6 @@
-import type { GitHubClient } from '../github/client';
+import { decodeBase64Utf8, type GitHubClient } from '../github/client';
 import { GitHubError } from '../github/errors';
-import { type VaultDb, type NoteRecord, fullText } from '../cache/db';
+import { type VaultDb, type NoteRecord, type OutboxOp, fullText } from '../cache/db';
 import { toRecord } from '../sync/sync';
 import { setActiveFlag } from '../frontmatter/doc';
 
@@ -32,7 +32,10 @@ export async function saveNoteText(
   opts: { create?: boolean; message?: string } = {},
 ): Promise<SaveResult> {
   const existing = await db.notes.get(path);
-  const baseSha = opts.create ? undefined : existing?.sha;
+  // Normalize the "no base" sentinel: an offline-created note is cached with
+  // sha '', and treating that as a real base SHA would queue writes GitHub can
+  // never satisfy. `undefined` consistently means "this file isn't on the repo".
+  const baseSha = opts.create ? undefined : existing?.sha || undefined;
   const message = opts.message ?? `vault: ${opts.create ? 'create' : 'update'} ${path}`;
 
   // Optimistic cache write. It necessarily carries the *pre-edit* SHA (the new one
@@ -49,6 +52,10 @@ export async function saveNoteText(
     await db.notes.put(
       toRecord(path, confirmed ?? existing?.sha ?? '', text, { dirty: !confirmed }),
     );
+    // This write supersedes anything queued for the path. Leaving a stale op there
+    // would replay against an out-of-date base SHA, 409 on flush, jam the outbox,
+    // and pin the path in protectedPaths — shielding it from sync indefinitely.
+    await replacePendingPut(db, path);
     return { queued: false };
   } catch (err) {
     if (err instanceof GitHubError && err.kind === 'network') {
@@ -78,14 +85,18 @@ export async function deleteNote(
   // If this note was created offline and never reached the server, deleting it
   // is a no-op remotely — just cancel the queued create instead of queueing a
   // delete against a non-existent file (which would jam the outbox).
+  // `!o.baseSha` covers both sentinels: a create queued with `undefined`, and a
+  // follow-up edit of that offline-created note, whose base was the cached ''.
   const pending = await db.outbox.where('path').equals(path).toArray();
-  if (pending.some((o) => o.op === 'put' && o.baseSha === undefined)) {
+  if (pending.some((o) => o.op === 'put' && !o.baseSha)) {
     await db.outbox.where('path').equals(path).delete();
     return { queued: false };
   }
 
   try {
     await client.deleteFile(path, { message, sha: existing.sha });
+    // Supersedes anything still queued for this path (see saveNoteText).
+    await replacePendingPut(db, path);
     return { queued: false };
   } catch (err) {
     if (err instanceof GitHubError && err.kind === 'network') {
@@ -148,6 +159,19 @@ export async function flushOutbox(
       flushed += 1;
     } catch (err) {
       if (err instanceof GitHubError && err.kind === 'network') break; // still offline
+
+      // A conflict on a replayed put often means the write already landed and we
+      // died before clearing the op. If the repo already holds exactly this text,
+      // the op is redundant — drop it and keep going rather than jamming the queue.
+      if (err instanceof GitHubError && err.kind === 'conflict' && op.op === 'put') {
+        const settled = await alreadyApplied(client, db, op);
+        if (settled) {
+          if (op.id !== undefined) await db.outbox.delete(op.id);
+          flushed += 1;
+          continue;
+        }
+      }
+
       if (err instanceof GitHubError) error = err;
       break;
     }
@@ -155,4 +179,21 @@ export async function flushOutbox(
 
   const remaining = await db.outbox.count();
   return { flushed, remaining, error };
+}
+
+/**
+ * True when the repo already contains exactly the text this queued put wanted to
+ * write — i.e. the commit landed but the op wasn't cleared. Refreshes the cache
+ * with the real SHA so the note stops looking unconfirmed.
+ */
+async function alreadyApplied(client: GitHubClient, db: VaultDb, op: OutboxOp): Promise<boolean> {
+  try {
+    const remote = await client.getContent(op.path);
+    if (decodeBase64Utf8(remote.content) !== (op.text ?? '')) return false;
+    await db.notes.put(toRecord(op.path, remote.sha, op.text ?? ''));
+    return true;
+  } catch {
+    // Can't confirm (missing, offline, denied) — treat as a genuine conflict.
+    return false;
+  }
 }

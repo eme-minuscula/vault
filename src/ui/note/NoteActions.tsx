@@ -5,6 +5,7 @@ import { db } from '../../lib/cache/db';
 import { currentClient } from '../../state/client';
 import { deleteNote, setNoteActive } from '../../lib/vault/mutations';
 import { editPathname, vaultHref } from '../../app/routes';
+import { useHoldEditorGuard } from '../../state/editorGuard';
 import { describeError } from '../errors';
 
 /** Edit / active-toggle / delete controls for a note. */
@@ -12,6 +13,8 @@ export function NoteActions({ note }: { note: NoteRecord }) {
   const navigate = useNavigate();
   const [busy, setBusy] = useState<null | 'active' | 'delete'>(null);
   const [error, setError] = useState<string | null>(null);
+  // Don't let a service-worker update reload the page mid-request.
+  useHoldEditorGuard(busy !== null);
 
   async function toggleActive() {
     const client = currentClient();
