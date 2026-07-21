@@ -163,6 +163,34 @@ describe('outbox jam prevention', () => {
     expect(await db.notes.get('w/Tmp.md')).toBeUndefined();
   });
 
+  it('does NOT drop an edit queued while the request was in flight', async () => {
+    await seed('w/A.md', 'original', 'blob1');
+
+    // Save B is in flight; while it hangs, the network drops and save C queues.
+    let releaseB: (v: WriteResponse) => void = () => {};
+    const slow = new FakeClient();
+    slow.putFile = (path, a) => {
+      slow.putCalls.push({ path, text: a.text, sha: a.sha });
+      return new Promise<WriteResponse>((resolve) => {
+        releaseB = resolve;
+      });
+    };
+    const saveB = saveNoteText(asClient(slow), db, 'w/A.md', 'edit B');
+
+    const offline = new FakeClient();
+    offline.nextError = net();
+    await saveNoteText(asClient(offline), db, 'w/A.md', 'edit C');
+    expect(await db.outbox.count()).toBe(1);
+
+    // Now B finally succeeds. It must not wipe C — C is the newer edit.
+    releaseB({ content: { sha: 'shaB', path: 'w/A.md' }, commit: { sha: 'c' } });
+    await saveB;
+
+    const queued = await db.outbox.toArray();
+    expect(queued).toHaveLength(1);
+    expect(queued[0]?.text).toBe('edit C');
+  });
+
   it('drops a queued op superseded by a later successful online save', async () => {
     await seed('w/A.md', 'original', 'blob1');
     const off = new FakeClient();
@@ -201,6 +229,54 @@ describe('flushOutbox', () => {
     const note = await db.notes.get('w/A.md');
     expect(note?.sha).toBe('realsha');
     expect(note?.dirty).toBeUndefined();
+  });
+
+  it('drops a conflicting delete when the file is already gone from the repo', async () => {
+    await seed('w/Gone.md', 'body', 'blob9');
+    const off = new FakeClient();
+    off.nextError = net();
+    await deleteNote(asClient(off), db, 'w/Gone.md');
+    expect(await db.outbox.count()).toBe(1);
+
+    const online = new FakeClient();
+    online.nextError = new GitHubError('conflict', 'stale', 409);
+    online.getContent = () => Promise.reject(new GitHubError('not-found', 'gone', 404));
+
+    const result = await flushOutbox(asClient(online), db);
+    expect(result.flushed).toBe(1);
+    expect(result.remaining).toBe(0);
+    expect(result.error).toBeUndefined();
+  });
+
+  it('does not treat an oversized (non-base64) response as a match', async () => {
+    const off = new FakeClient();
+    off.nextError = net();
+    await saveNoteText(asClient(off), db, 'w/Big.md', '', { create: true });
+
+    const online = new FakeClient();
+    online.nextError = new GitHubError('conflict', 'stale', 409);
+    // Files >1MB return encoding "none" with empty content — must not false-match.
+    online.getContent = () =>
+      Promise.resolve({ path: 'w/Big.md', sha: 's', content: '', encoding: 'none' });
+
+    const result = await flushOutbox(asClient(online), db);
+    expect(result.remaining).toBe(1);
+    expect(result.error?.kind).toBe('conflict');
+  });
+
+  it('skips an op cancelled while the flush was running', async () => {
+    const off = new FakeClient();
+    off.nextError = net();
+    await saveNoteText(asClient(off), db, 'w/A.md', 'queued', { create: true });
+    const [op] = await db.outbox.toArray();
+
+    // Cancel it out-of-band, as a superseding write would.
+    if (op?.id !== undefined) await db.outbox.delete(op.id);
+
+    const online = new FakeClient();
+    const result = await flushOutbox(asClient(online), db);
+    expect(online.putCalls).toHaveLength(0); // not replayed
+    expect(result.flushed).toBe(0);
   });
 
   it('still reports a genuine conflict when the repo text differs', async () => {

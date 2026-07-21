@@ -19,9 +19,10 @@ export interface SaveResult {
   queued: boolean;
 }
 
-async function replacePendingPut(db: VaultDb, path: string): Promise<void> {
-  // Keep at most one pending op per path (last-write-wins while offline).
-  await db.outbox.where('path').equals(path).delete();
+/** Ids of the ops queued for `path` right now — the ones a write about to be
+ * issued will supersede. Anything queued *later* is a newer edit and must survive. */
+async function pendingOpIds(db: VaultDb, path: string): Promise<number[]> {
+  return (await db.outbox.where('path').equals(path).primaryKeys()) as number[];
 }
 
 export async function saveNoteText(
@@ -32,11 +33,14 @@ export async function saveNoteText(
   opts: { create?: boolean; message?: string } = {},
 ): Promise<SaveResult> {
   const existing = await db.notes.get(path);
-  // Normalize the "no base" sentinel: an offline-created note is cached with
-  // sha '', and treating that as a real base SHA would queue writes GitHub can
-  // never satisfy. `undefined` consistently means "this file isn't on the repo".
+  // Normalize the "no base" sentinel. An offline-created note is cached with
+  // sha '', and `''` and `undefined` must mean the same thing — "this file isn't
+  // on the repo yet" — so the create-cancel check below can recognise both. (The
+  // wire was never at risk: putFile already omits a falsy sha.)
   const baseSha = opts.create ? undefined : existing?.sha || undefined;
   const message = opts.message ?? `vault: ${opts.create ? 'create' : 'update'} ${path}`;
+  // Snapshot before issuing the request — see pendingOpIds.
+  const superseded = await pendingOpIds(db, path);
 
   // Optimistic cache write. It necessarily carries the *pre-edit* SHA (the new one
   // isn't known yet), so mark it dirty: if this process dies before the commit is
@@ -52,14 +56,16 @@ export async function saveNoteText(
     await db.notes.put(
       toRecord(path, confirmed ?? existing?.sha ?? '', text, { dirty: !confirmed }),
     );
-    // This write supersedes anything queued for the path. Leaving a stale op there
-    // would replay against an out-of-date base SHA, 409 on flush, jam the outbox,
-    // and pin the path in protectedPaths — shielding it from sync indefinitely.
-    await replacePendingPut(db, path);
+    // This write supersedes the ops that were queued when it was issued. Leaving
+    // a stale op would replay against an out-of-date base SHA, 409 on flush, jam
+    // the outbox, and pin the path in protectedPaths — shielding it from sync
+    // indefinitely. Only the snapshot is cleared: an edit queued while this
+    // request was in flight is newer than us and must survive.
+    await db.outbox.bulkDelete(superseded);
     return { queued: false };
   } catch (err) {
     if (err instanceof GitHubError && err.kind === 'network') {
-      await replacePendingPut(db, path);
+      await db.outbox.bulkDelete(superseded);
       await db.outbox.add({ op: 'put', path, message, text, baseSha, createdAt: Date.now() });
       return { queued: true };
     }
@@ -89,18 +95,26 @@ export async function deleteNote(
   // follow-up edit of that offline-created note, whose base was the cached ''.
   const pending = await db.outbox.where('path').equals(path).toArray();
   if (pending.some((o) => o.op === 'put' && !o.baseSha)) {
+    // The note never reached the repo, so every queued op for it is moot.
     await db.outbox.where('path').equals(path).delete();
     return { queued: false };
   }
 
+  // No SHA and no pending create means there's nothing on the repo to delete
+  // (e.g. a create that flushed without a confirmed SHA). Removing it locally is
+  // the whole job; queueing a SHA-less delete would only 422 and jam the outbox.
+  if (!existing.sha) return { queued: false };
+
+  const superseded = await pendingOpIds(db, path);
+
   try {
     await client.deleteFile(path, { message, sha: existing.sha });
-    // Supersedes anything still queued for this path (see saveNoteText).
-    await replacePendingPut(db, path);
+    // Supersedes the ops queued when this delete was issued (see saveNoteText).
+    await db.outbox.bulkDelete(superseded);
     return { queued: false };
   } catch (err) {
     if (err instanceof GitHubError && err.kind === 'network') {
-      await replacePendingPut(db, path);
+      await db.outbox.bulkDelete(superseded);
       await db.outbox.add({
         op: 'delete',
         path,
@@ -143,6 +157,10 @@ export async function flushOutbox(
   let error: GitHubError | undefined;
 
   for (const op of ops) {
+    // `ops` is a snapshot; an op cancelled while we were flushing (superseded by a
+    // newer write, or a delete that cancelled a create) must not be replayed — a
+    // create-shaped op omits the sha and would overwrite unconditionally.
+    if (op.id !== undefined && !(await db.outbox.get(op.id))) continue;
     try {
       if (op.op === 'put') {
         const res = await client.putFile(op.path, {
@@ -160,11 +178,12 @@ export async function flushOutbox(
     } catch (err) {
       if (err instanceof GitHubError && err.kind === 'network') break; // still offline
 
-      // A conflict on a replayed put often means the write already landed and we
-      // died before clearing the op. If the repo already holds exactly this text,
-      // the op is redundant — drop it and keep going rather than jamming the queue.
-      if (err instanceof GitHubError && err.kind === 'conflict' && op.op === 'put') {
-        const settled = await alreadyApplied(client, db, op);
+      // A conflict on a replay usually means the intent is already satisfied and
+      // we died before clearing the op. Rather than jamming the queue forever,
+      // check whether the repo already reflects it — and drop the op if so.
+      if (err instanceof GitHubError && err.kind === 'conflict') {
+        const settled =
+          op.op === 'put' ? await alreadyApplied(client, db, op) : await alreadyDeleted(client, op);
         if (settled) {
           if (op.id !== undefined) await db.outbox.delete(op.id);
           flushed += 1;
@@ -189,11 +208,29 @@ export async function flushOutbox(
 async function alreadyApplied(client: GitHubClient, db: VaultDb, op: OutboxOp): Promise<boolean> {
   try {
     const remote = await client.getContent(op.path);
+    // Files over ~1MB come back as `encoding: "none"` with empty content, which
+    // would false-match a queued empty note. Only trust a real base64 payload.
+    if (remote.encoding !== 'base64') return false;
     if (decodeBase64Utf8(remote.content) !== (op.text ?? '')) return false;
     await db.notes.put(toRecord(op.path, remote.sha, op.text ?? ''));
     return true;
   } catch {
     // Can't confirm (missing, offline, denied) — treat as a genuine conflict.
     return false;
+  }
+}
+
+/**
+ * True when the file a queued delete targets is already gone from the repo, so
+ * the op is redundant. Without this, a delete that conflicts (the file changed
+ * remotely between queueing and flush) jams the queue forever — the same failure
+ * this module closes for puts.
+ */
+async function alreadyDeleted(client: GitHubClient, op: OutboxOp): Promise<boolean> {
+  try {
+    await client.getContent(op.path);
+    return false; // still there → a real conflict
+  } catch (err) {
+    return err instanceof GitHubError && err.kind === 'not-found';
   }
 }
