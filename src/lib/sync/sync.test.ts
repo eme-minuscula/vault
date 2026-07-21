@@ -247,6 +247,13 @@ describe('syncVault', () => {
   });
 
   it('on 304, drops an unconfirmed note that never reached the repo', async () => {
+    // Sync first so an ETag exists — a real 304 only follows an If-None-Match.
+    const first = new FakeClient();
+    first.branchQueue = [branch('c1', 't1', 'W/"e1"')];
+    first.treeEntries = [{ path: 'w/A.md', type: 'blob', sha: 'a1' }];
+    first.blobs.set('a1', 'kept');
+    await syncVault(asClient(first), database, {});
+
     // Created offline (no SHA) and its queued write was discarded.
     await database.notes.put(toRecord('w/New.md', '', 'never committed', { dirty: true }));
 
@@ -257,14 +264,63 @@ describe('syncVault', () => {
     expect(fake.blobFetches).toEqual([]);
     expect(result.removed).toBe(1);
     expect(await database.notes.get('w/New.md')).toBeUndefined();
+    expect((await database.notes.get('w/A.md'))?.body).toBe('kept'); // untouched
   });
 
-  it('does nothing extra on 304 when no note is dirty', async () => {
+  it('on 304 with a populated clean cache, changes nothing', async () => {
+    const first = new FakeClient();
+    first.branchQueue = [branch('c1', 't1', 'W/"e1"')];
+    first.treeEntries = [
+      { path: 'w/A.md', type: 'blob', sha: 'a1' },
+      { path: 'w/B.md', type: 'blob', sha: 'b1' },
+    ];
+    first.blobs.set('a1', 'A body');
+    first.blobs.set('b1', 'B body');
+    await syncVault(asClient(first), database, {});
+
     const fake = new FakeClient();
     fake.branchQueue = [{ notModified: true, etag: 'W/"e1"', data: null }];
     const result = await syncVault(asClient(fake), database, {});
-    expect(result.upToDate).toBe(true);
+
+    expect(result).toMatchObject({ changed: 0, removed: 0, upToDate: true });
     expect(fake.blobFetches).toEqual([]);
+    expect((await database.notes.get('w/A.md'))?.body).toBe('A body');
+    expect((await database.notes.get('w/B.md'))?.body).toBe('B body');
+  });
+
+  it('the sparse dirty index selects exactly the unconfirmed rows', async () => {
+    // If this query silently matched nothing, repair would be disabled everywhere.
+    await database.notes.bulkPut([
+      toRecord('w/Clean.md', 's1', 'clean'),
+      toRecord('w/Dirty.md', 's2', 'dirty', { dirty: true }),
+    ]);
+    const found = await database.notes.where('dirty').equals(1).toArray();
+    expect(found.map((n) => n.path)).toEqual(['w/Dirty.md']);
+  });
+
+  it('does not clobber a note re-saved while the repair fetch was in flight', async () => {
+    const first = new FakeClient();
+    first.branchQueue = [branch('c1', 't1', 'W/"e1"')];
+    first.treeEntries = [{ path: 'w/A.md', type: 'blob', sha: 'a1' }];
+    first.blobs.set('a1', 'repo text');
+    await syncVault(asClient(first), database, {});
+    await database.notes.put(toRecord('w/A.md', 'a1', 'unsaved edit', { dirty: true }));
+
+    // Simulate a save confirming mid-fetch: the row gains a server SHA and goes clean.
+    const racing = new FakeClient();
+    racing.branchQueue = [{ notModified: true, etag: 'W/"e1"', data: null }];
+    racing.getBlobText = async (sha: string) => {
+      racing.blobFetches.push(sha);
+      await database.notes.put(toRecord('w/A.md', 'a2', 'just saved by the user'));
+      return 'repo text';
+    };
+
+    await syncVault(asClient(racing), database, {});
+
+    // The user's confirmed save survives; the stale repair result is discarded.
+    const note = await database.notes.get('w/A.md');
+    expect(note?.body).toBe('just saved by the user');
+    expect(note?.sha).toBe('a2');
   });
 
   it('leaves a confirmed, unchanged note alone (no blanket refetch)', async () => {

@@ -144,16 +144,19 @@ export async function syncVault(
 
   let fetched = 0;
   report('fetching', 0, toFetch.length);
-  const records = await mapLimit(toFetch, FETCH_CONCURRENCY, async (path) => {
+  const entries = await mapLimit(toFetch, FETCH_CONCURRENCY, async (path) => {
     const sha = desired.get(path)!;
     const raw = await client.getBlobText(sha);
-    const record = toRecord(path, sha, raw);
     fetched += 1;
     report('fetching', fetched, toFetch.length);
-    return record;
+    return {
+      record: toRecord(path, sha, raw),
+      expectedSha: existing.get(path),
+      expectedDirty: unconfirmed.has(path),
+    };
   });
 
-  if (records.length) await database.notes.bulkPut(records);
+  const written = await putIfUnchanged(database, entries);
 
   // Index image attachments (metadata only — the bytes are fetched lazily on
   // display). Cheap: no blob downloads happen here.
@@ -167,7 +170,7 @@ export async function syncVault(
 
   report('done', fetched, toFetch.length);
   return {
-    changed: records.length,
+    changed: written,
     removed: toDelete.length,
     upToDate: false,
     headSha,
@@ -203,15 +206,52 @@ async function repairUnconfirmed(
   const recoverable = dirty.filter((n) => n.sha);
   let done = 0;
   report('fetching', 0, recoverable.length);
-  const records = await mapLimit(recoverable, FETCH_CONCURRENCY, async (note) => {
+  const entries = await mapLimit(recoverable, FETCH_CONCURRENCY, async (note) => {
     const raw = await client.getBlobText(note.sha);
     done += 1;
     report('fetching', done, recoverable.length);
-    return toRecord(note.path, note.sha, raw);
+    return {
+      record: toRecord(note.path, note.sha, raw),
+      expectedSha: note.sha,
+      expectedDirty: true,
+    };
   });
-  if (records.length) await database.notes.bulkPut(records);
+  const repaired = await putIfUnchanged(database, entries);
 
-  return { repaired: records.length, removed: orphans.length };
+  return { repaired, removed: orphans.length };
+}
+
+/**
+ * Write fetched records, skipping any note that changed underneath us while the
+ * fetch was in flight (i.e. the user saved it). Without this, a reconcile could
+ * overwrite a just-confirmed local save with the older repo text — recoverable,
+ * but the user would watch their edit vanish. Anything skipped is reconciled by
+ * the next sync, which will see the newer SHA.
+ */
+async function putIfUnchanged(
+  database: VaultDb,
+  entries: readonly {
+    record: NoteRecord;
+    /** SHA observed before the fetch; undefined when the note wasn't cached yet. */
+    expectedSha: string | undefined;
+    expectedDirty: boolean;
+  }[],
+): Promise<number> {
+  if (entries.length === 0) return 0;
+  let written = 0;
+  await database.transaction('rw', database.notes, async () => {
+    for (const { record, expectedSha, expectedDirty } of entries) {
+      const current = await database.notes.get(record.path);
+      if (current) {
+        // Appeared, or was re-saved, while we were fetching → leave it alone.
+        if (expectedSha === undefined) continue;
+        if (current.sha !== expectedSha || (current.dirty === 1) !== expectedDirty) continue;
+      }
+      await database.notes.put(record);
+      written += 1;
+    }
+  });
+  return written;
 }
 
 /** Reconcile the image-attachment index against the current tree (metadata only). */
