@@ -206,6 +206,67 @@ describe('syncVault', () => {
     expect(note?.dirty).toBeFalsy();
   });
 
+  it('repairs an unconfirmed edit even when the branch reports 304', async () => {
+    // The actual P0 scenario: the write was lost and nobody else committed since,
+    // so the branch is unchanged and the delta pass never runs.
+    const first = new FakeClient();
+    first.branchQueue = [branch('c1', 't1', 'W/"e1"')];
+    first.treeEntries = [{ path: 'w/A.md', type: 'blob', sha: 'a1' }];
+    first.blobs.set('a1', 'from the repo');
+    await syncVault(asClient(first), database, {});
+
+    await database.notes.put(toRecord('w/A.md', 'a1', 'unsaved local edit', { dirty: true }));
+
+    const second = new FakeClient();
+    second.branchQueue = [{ notModified: true, etag: 'W/"e1"', data: null }];
+    second.blobs.set('a1', 'from the repo');
+    const result = await syncVault(asClient(second), database, {});
+
+    expect(second.blobFetches).toEqual(['a1']); // repaired without a tree request
+    expect(result.changed).toBe(1);
+    expect(result.upToDate).toBe(false);
+    const note = await database.notes.get('w/A.md');
+    expect(note?.body).toBe('from the repo');
+    expect(note?.dirty).toBeUndefined();
+  });
+
+  it('on 304, leaves a dirty note alone while its write is still queued', async () => {
+    const first = new FakeClient();
+    first.branchQueue = [branch('c1', 't1', 'W/"e1"')];
+    first.treeEntries = [{ path: 'w/A.md', type: 'blob', sha: 'a1' }];
+    first.blobs.set('a1', 'from the repo');
+    await syncVault(asClient(first), database, {});
+    await database.notes.put(toRecord('w/A.md', 'a1', 'queued edit', { dirty: true }));
+
+    const second = new FakeClient();
+    second.branchQueue = [{ notModified: true, etag: 'W/"e1"', data: null }];
+    await syncVault(asClient(second), database, { protectedPaths: new Set(['w/A.md']) });
+
+    expect(second.blobFetches).toEqual([]);
+    expect((await database.notes.get('w/A.md'))?.body).toBe('queued edit');
+  });
+
+  it('on 304, drops an unconfirmed note that never reached the repo', async () => {
+    // Created offline (no SHA) and its queued write was discarded.
+    await database.notes.put(toRecord('w/New.md', '', 'never committed', { dirty: true }));
+
+    const fake = new FakeClient();
+    fake.branchQueue = [{ notModified: true, etag: 'W/"e1"', data: null }];
+    const result = await syncVault(asClient(fake), database, {});
+
+    expect(fake.blobFetches).toEqual([]);
+    expect(result.removed).toBe(1);
+    expect(await database.notes.get('w/New.md')).toBeUndefined();
+  });
+
+  it('does nothing extra on 304 when no note is dirty', async () => {
+    const fake = new FakeClient();
+    fake.branchQueue = [{ notModified: true, etag: 'W/"e1"', data: null }];
+    const result = await syncVault(asClient(fake), database, {});
+    expect(result.upToDate).toBe(true);
+    expect(fake.blobFetches).toEqual([]);
+  });
+
   it('leaves a confirmed, unchanged note alone (no blanket refetch)', async () => {
     const first = new FakeClient();
     first.branchQueue = [branch('c1', 't1', 'W/"e1"')];

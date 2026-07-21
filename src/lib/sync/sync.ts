@@ -76,11 +76,15 @@ export async function syncVault(
   const branch = await client.getBranch(priorEtag);
 
   if (branch.notModified) {
+    // A 304 means the repo is unchanged — which is exactly the situation where a
+    // lost local write would otherwise never be reconciled, since the delta pass
+    // below never runs. Repair those here before short-circuiting.
+    const { repaired, removed } = await repairUnconfirmed(client, database, protectedPaths, report);
     report('up-to-date', 0, 0);
     return {
-      changed: 0,
-      removed: 0,
-      upToDate: true,
+      changed: repaired,
+      removed,
+      upToDate: repaired === 0 && removed === 0,
       headSha: await database.getMeta(META_HEAD_SHA),
       truncated: false,
     };
@@ -171,6 +175,45 @@ export async function syncVault(
   };
 }
 
+/**
+ * Reconcile notes holding an unconfirmed local write, without a tree pass.
+ *
+ * Only valid when the branch reported 304: that proves blob SHAs are unchanged,
+ * so a dirty record's (pre-edit) SHA is still the repo's current SHA and can be
+ * re-fetched directly — one blob request per affected note, no tree request.
+ *
+ * Paths with a queued offline write are skipped: they are locally authoritative
+ * until the outbox flushes. A dirty record with no SHA was created offline and
+ * never reached the repo, so if it is no longer queued it is dropped.
+ */
+async function repairUnconfirmed(
+  client: GitHubClient,
+  database: VaultDb,
+  protectedPaths: ReadonlySet<string>,
+  report: (phase: SyncPhase, fetched: number, toFetch: number) => void,
+): Promise<{ repaired: number; removed: number }> {
+  const dirty = (await database.notes.where('dirty').equals(1).toArray()).filter(
+    (n) => !protectedPaths.has(n.path),
+  );
+  if (dirty.length === 0) return { repaired: 0, removed: 0 };
+
+  const orphans = dirty.filter((n) => !n.sha).map((n) => n.path);
+  if (orphans.length) await database.notes.bulkDelete(orphans);
+
+  const recoverable = dirty.filter((n) => n.sha);
+  let done = 0;
+  report('fetching', 0, recoverable.length);
+  const records = await mapLimit(recoverable, FETCH_CONCURRENCY, async (note) => {
+    const raw = await client.getBlobText(note.sha);
+    done += 1;
+    report('fetching', done, recoverable.length);
+    return toRecord(note.path, note.sha, raw);
+  });
+  if (records.length) await database.notes.bulkPut(records);
+
+  return { repaired: records.length, removed: orphans.length };
+}
+
 /** Reconcile the image-attachment index against the current tree (metadata only). */
 async function indexAttachments(
   database: VaultDb,
@@ -242,6 +285,6 @@ export function toRecord(
     frontmatter,
     body,
     updatedAt: Date.now(),
-    ...(opts.dirty ? { dirty: true } : {}),
+    ...(opts.dirty ? { dirty: 1 as const } : {}),
   };
 }

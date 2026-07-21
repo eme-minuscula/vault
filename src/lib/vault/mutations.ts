@@ -42,9 +42,13 @@ export async function saveNoteText(
 
   try {
     const res = await client.putFile(path, { message, text, sha: baseSha });
-    const newSha = res.content?.sha ?? existing?.sha ?? '';
-    // Confirmed: real SHA, no longer dirty.
-    await db.notes.put(toRecord(path, newSha, text));
+    // Only a server-assigned SHA counts as confirmation. If the response somehow
+    // lacks one, stay dirty rather than recreating the exact edited-text-with-
+    // stale-SHA state this marker exists to prevent.
+    const confirmed = res.content?.sha;
+    await db.notes.put(
+      toRecord(path, confirmed ?? existing?.sha ?? '', text, { dirty: !confirmed }),
+    );
     return { queued: false };
   } catch (err) {
     if (err instanceof GitHubError && err.kind === 'network') {
