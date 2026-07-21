@@ -181,6 +181,66 @@ describe('syncVault', () => {
     expect((await database.notes.get('w/B.md'))?.body).toBe('B one'); // local copy kept
   });
 
+  it('re-fetches a note whose local edit was never confirmed, repairing divergence', async () => {
+    // Seed a synced note.
+    const first = new FakeClient();
+    first.branchQueue = [branch('c1', 't1', 'W/"e1"')];
+    first.treeEntries = [{ path: 'w/A.md', type: 'blob', sha: 'a1' }];
+    first.blobs.set('a1', 'from the repo');
+    await syncVault(asClient(first), database, {});
+
+    // Exactly the state a lost write leaves behind: edited body, still tagged with
+    // the pre-edit SHA, never confirmed (process died between put and confirm).
+    await database.notes.put(toRecord('w/A.md', 'a1', 'unsaved local edit', { dirty: true }));
+
+    // The repo is unchanged, so a plain SHA comparison would skip this note forever.
+    const second = new FakeClient();
+    second.branchQueue = [branch('c2', 't2', 'W/"e2"')];
+    second.treeEntries = [{ path: 'w/A.md', type: 'blob', sha: 'a1' }];
+    second.blobs.set('a1', 'from the repo');
+    await syncVault(asClient(second), database, {});
+
+    expect(second.blobFetches).toEqual(['a1']); // repaired, not skipped
+    const note = await database.notes.get('w/A.md');
+    expect(note?.body).toBe('from the repo');
+    expect(note?.dirty).toBeFalsy();
+  });
+
+  it('leaves a confirmed, unchanged note alone (no blanket refetch)', async () => {
+    const first = new FakeClient();
+    first.branchQueue = [branch('c1', 't1', 'W/"e1"')];
+    first.treeEntries = [{ path: 'w/A.md', type: 'blob', sha: 'a1' }];
+    first.blobs.set('a1', 'body');
+    await syncVault(asClient(first), database, {});
+
+    const second = new FakeClient();
+    second.branchQueue = [branch('c2', 't2', 'W/"e2"')];
+    second.treeEntries = [{ path: 'w/A.md', type: 'blob', sha: 'a1' }];
+    await syncVault(asClient(second), database, {});
+
+    expect(second.blobFetches).toEqual([]);
+  });
+
+  it('does not re-fetch a dirty note that still has a queued write', async () => {
+    const first = new FakeClient();
+    first.branchQueue = [branch('c1', 't1', 'W/"e1"')];
+    first.treeEntries = [{ path: 'w/A.md', type: 'blob', sha: 'a1' }];
+    first.blobs.set('a1', 'from the repo');
+    await syncVault(asClient(first), database, {});
+    await database.notes.put(toRecord('w/A.md', 'a1', 'queued offline edit', { dirty: true }));
+
+    const second = new FakeClient();
+    second.branchQueue = [branch('c2', 't2', 'W/"e2"')];
+    second.treeEntries = [{ path: 'w/A.md', type: 'blob', sha: 'a1' }];
+    second.blobs.set('a1', 'from the repo');
+    await syncVault(asClient(second), database, {
+      protectedPaths: new Set(['w/A.md']),
+    });
+
+    expect(second.blobFetches).toEqual([]);
+    expect((await database.notes.get('w/A.md'))?.body).toBe('queued offline edit');
+  });
+
   it('purges an already-cached excluded note even on a 304', async () => {
     await database.notes.put(toRecord('w/Projects/HA/Creds.md', 'x', 'secret'));
     expect(await database.notes.get('w/Projects/HA/Creds.md')).toBeDefined();

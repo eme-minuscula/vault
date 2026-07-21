@@ -35,12 +35,15 @@ export async function saveNoteText(
   const baseSha = opts.create ? undefined : existing?.sha;
   const message = opts.message ?? `vault: ${opts.create ? 'create' : 'update'} ${path}`;
 
-  // Optimistic cache write (keep the old sha until the server assigns a new one).
-  await db.notes.put(toRecord(path, existing?.sha ?? '', text));
+  // Optimistic cache write. It necessarily carries the *pre-edit* SHA (the new one
+  // isn't known yet), so mark it dirty: if this process dies before the commit is
+  // confirmed, sync would otherwise see a matching SHA and never repair the note.
+  await db.notes.put(toRecord(path, existing?.sha ?? '', text, { dirty: true }));
 
   try {
     const res = await client.putFile(path, { message, text, sha: baseSha });
     const newSha = res.content?.sha ?? existing?.sha ?? '';
+    // Confirmed: real SHA, no longer dirty.
     await db.notes.put(toRecord(path, newSha, text));
     return { queued: false };
   } catch (err) {

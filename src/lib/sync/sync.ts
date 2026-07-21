@@ -109,12 +109,20 @@ export async function syncVault(
   }
 
   const existing = new Map<string, string>();
-  await database.notes.each((n) => existing.set(n.path, n.sha));
+  // Records holding an unconfirmed local edit. They still carry the pre-edit SHA,
+  // so a plain SHA comparison would call them up to date forever if the write was
+  // lost (tab closed, reload, crash). Re-fetch them to reconcile with the repo.
+  const unconfirmed = new Set<string>();
+  await database.notes.each((n) => {
+    existing.set(n.path, n.sha);
+    if (n.dirty) unconfirmed.add(n.path);
+  });
 
   const toFetch: string[] = [];
   for (const [path, sha] of desired) {
-    if (protectedPaths.has(path)) continue; // don't overwrite a pending local write
-    if (existing.get(path) !== sha) toFetch.push(path);
+    // A path with a queued offline write is authoritative locally until it flushes.
+    if (protectedPaths.has(path)) continue;
+    if (existing.get(path) !== sha || unconfirmed.has(path)) toFetch.push(path);
   }
   const toDelete: string[] = [];
   if (!truncated) {
@@ -204,7 +212,19 @@ async function indexAttachments(
   if (toPut.length) await database.attachments.bulkPut(toPut);
 }
 
-export function toRecord(path: string, sha: string, raw: string): NoteRecord {
+/**
+ * Build a cache record from raw note text.
+ *
+ * Pass `dirty: true` for an optimistic local write whose commit hasn't been
+ * confirmed yet — sync uses that marker to re-fetch the note if the write is
+ * lost, since the record still carries the pre-edit SHA.
+ */
+export function toRecord(
+  path: string,
+  sha: string,
+  raw: string,
+  opts: { dirty?: boolean } = {},
+): NoteRecord {
   const parsed = parseNote(raw);
   const { frontmatter, body } = splitDoc(raw);
   const { vault, folder, filename } = pathMeta(path);
@@ -222,5 +242,6 @@ export function toRecord(path: string, sha: string, raw: string): NoteRecord {
     frontmatter,
     body,
     updatedAt: Date.now(),
+    ...(opts.dirty ? { dirty: true } : {}),
   };
 }
