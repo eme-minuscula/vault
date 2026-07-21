@@ -72,6 +72,18 @@ describe('saveNoteText', () => {
     expect((await db.notes.get('w/A.md'))?.body).toBe('hello');
   });
 
+  it('marks a confirmed write clean, and an unconfirmed response dirty', async () => {
+    const fake = new FakeClient();
+    await saveNoteText(asClient(fake), db, 'w/Ok.md', 'body', { create: true });
+    expect((await db.notes.get('w/Ok.md'))?.dirty).toBeUndefined();
+
+    // A response without content.sha is not confirmation — stay repairable.
+    const noSha = new FakeClient();
+    noSha.putFile = () => Promise.resolve({ content: null, commit: { sha: 'c' } });
+    await saveNoteText(asClient(noSha), db, 'w/Unconfirmed.md', 'body', { create: true });
+    expect((await db.notes.get('w/Unconfirmed.md'))?.dirty).toBe(1);
+  });
+
   it('rolls back the optimistic write on a hard error', async () => {
     await seed('w/A.md', 'original', 'blob1');
     const fake = new FakeClient();

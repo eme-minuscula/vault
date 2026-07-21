@@ -18,6 +18,18 @@ export interface NoteRecord {
   frontmatter: string;
   body: string;
   updatedAt: number; // local cache timestamp (ms)
+  /**
+   * Set while this record holds a local edit that has NOT been confirmed by
+   * GitHub. Optimistic writes reuse the previous blob SHA (the new one isn't
+   * known yet), so without this marker a write that never lands would look
+   * identical to a synced note and sync would never repair it. Cleared once the
+   * server returns the real SHA.
+   *
+   * Stored as `1 | undefined` rather than a boolean so IndexedDB can index it
+   * (booleans aren't indexable — see the v2 note below), and sparsely: only
+   * unconfirmed rows enter the index, so the common lookup is O(0).
+   */
+  dirty?: 1;
 }
 
 /** An image attachment index entry. `dataUri` is filled lazily on first display. */
@@ -84,6 +96,14 @@ export class VaultDb extends Dexie {
     // v4 adds the image attachment index.
     this.version(4).stores({
       notes: 'path, vault, type, date, *tags',
+      meta: 'key',
+      outbox: '++id, path',
+      attachments: 'path, vault, filename',
+    });
+    // v5 indexes `dirty` (sparse: only unconfirmed rows) so sync can find notes
+    // needing repair without scanning the table on the cheap 304 path.
+    this.version(5).stores({
+      notes: 'path, vault, type, date, dirty, *tags',
       meta: 'key',
       outbox: '++id, path',
       attachments: 'path, vault, filename',

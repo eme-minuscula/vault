@@ -76,11 +76,15 @@ export async function syncVault(
   const branch = await client.getBranch(priorEtag);
 
   if (branch.notModified) {
+    // A 304 means the repo is unchanged — which is exactly the situation where a
+    // lost local write would otherwise never be reconciled, since the delta pass
+    // below never runs. Repair those here before short-circuiting.
+    const { repaired, removed } = await repairUnconfirmed(client, database, protectedPaths, report);
     report('up-to-date', 0, 0);
     return {
-      changed: 0,
-      removed: 0,
-      upToDate: true,
+      changed: repaired,
+      removed,
+      upToDate: repaired === 0 && removed === 0,
       headSha: await database.getMeta(META_HEAD_SHA),
       truncated: false,
     };
@@ -109,12 +113,20 @@ export async function syncVault(
   }
 
   const existing = new Map<string, string>();
-  await database.notes.each((n) => existing.set(n.path, n.sha));
+  // Records holding an unconfirmed local edit. They still carry the pre-edit SHA,
+  // so a plain SHA comparison would call them up to date forever if the write was
+  // lost (tab closed, reload, crash). Re-fetch them to reconcile with the repo.
+  const unconfirmed = new Set<string>();
+  await database.notes.each((n) => {
+    existing.set(n.path, n.sha);
+    if (n.dirty) unconfirmed.add(n.path);
+  });
 
   const toFetch: string[] = [];
   for (const [path, sha] of desired) {
-    if (protectedPaths.has(path)) continue; // don't overwrite a pending local write
-    if (existing.get(path) !== sha) toFetch.push(path);
+    // A path with a queued offline write is authoritative locally until it flushes.
+    if (protectedPaths.has(path)) continue;
+    if (existing.get(path) !== sha || unconfirmed.has(path)) toFetch.push(path);
   }
   const toDelete: string[] = [];
   if (!truncated) {
@@ -132,16 +144,19 @@ export async function syncVault(
 
   let fetched = 0;
   report('fetching', 0, toFetch.length);
-  const records = await mapLimit(toFetch, FETCH_CONCURRENCY, async (path) => {
+  const entries = await mapLimit(toFetch, FETCH_CONCURRENCY, async (path) => {
     const sha = desired.get(path)!;
     const raw = await client.getBlobText(sha);
-    const record = toRecord(path, sha, raw);
     fetched += 1;
     report('fetching', fetched, toFetch.length);
-    return record;
+    return {
+      record: toRecord(path, sha, raw),
+      expectedSha: existing.get(path),
+      expectedDirty: unconfirmed.has(path),
+    };
   });
 
-  if (records.length) await database.notes.bulkPut(records);
+  const written = await putIfUnchanged(database, entries);
 
   // Index image attachments (metadata only — the bytes are fetched lazily on
   // display). Cheap: no blob downloads happen here.
@@ -155,12 +170,88 @@ export async function syncVault(
 
   report('done', fetched, toFetch.length);
   return {
-    changed: records.length,
+    changed: written,
     removed: toDelete.length,
     upToDate: false,
     headSha,
     truncated,
   };
+}
+
+/**
+ * Reconcile notes holding an unconfirmed local write, without a tree pass.
+ *
+ * Only valid when the branch reported 304: that proves blob SHAs are unchanged,
+ * so a dirty record's (pre-edit) SHA is still the repo's current SHA and can be
+ * re-fetched directly — one blob request per affected note, no tree request.
+ *
+ * Paths with a queued offline write are skipped: they are locally authoritative
+ * until the outbox flushes. A dirty record with no SHA was created offline and
+ * never reached the repo, so if it is no longer queued it is dropped.
+ */
+async function repairUnconfirmed(
+  client: GitHubClient,
+  database: VaultDb,
+  protectedPaths: ReadonlySet<string>,
+  report: (phase: SyncPhase, fetched: number, toFetch: number) => void,
+): Promise<{ repaired: number; removed: number }> {
+  const dirty = (await database.notes.where('dirty').equals(1).toArray()).filter(
+    (n) => !protectedPaths.has(n.path),
+  );
+  if (dirty.length === 0) return { repaired: 0, removed: 0 };
+
+  const orphans = dirty.filter((n) => !n.sha).map((n) => n.path);
+  if (orphans.length) await database.notes.bulkDelete(orphans);
+
+  const recoverable = dirty.filter((n) => n.sha);
+  let done = 0;
+  report('fetching', 0, recoverable.length);
+  const entries = await mapLimit(recoverable, FETCH_CONCURRENCY, async (note) => {
+    const raw = await client.getBlobText(note.sha);
+    done += 1;
+    report('fetching', done, recoverable.length);
+    return {
+      record: toRecord(note.path, note.sha, raw),
+      expectedSha: note.sha,
+      expectedDirty: true,
+    };
+  });
+  const repaired = await putIfUnchanged(database, entries);
+
+  return { repaired, removed: orphans.length };
+}
+
+/**
+ * Write fetched records, skipping any note that changed underneath us while the
+ * fetch was in flight (i.e. the user saved it). Without this, a reconcile could
+ * overwrite a just-confirmed local save with the older repo text — recoverable,
+ * but the user would watch their edit vanish. Anything skipped is reconciled by
+ * the next sync, which will see the newer SHA.
+ */
+async function putIfUnchanged(
+  database: VaultDb,
+  entries: readonly {
+    record: NoteRecord;
+    /** SHA observed before the fetch; undefined when the note wasn't cached yet. */
+    expectedSha: string | undefined;
+    expectedDirty: boolean;
+  }[],
+): Promise<number> {
+  if (entries.length === 0) return 0;
+  let written = 0;
+  await database.transaction('rw', database.notes, async () => {
+    for (const { record, expectedSha, expectedDirty } of entries) {
+      const current = await database.notes.get(record.path);
+      if (current) {
+        // Appeared, or was re-saved, while we were fetching → leave it alone.
+        if (expectedSha === undefined) continue;
+        if (current.sha !== expectedSha || (current.dirty === 1) !== expectedDirty) continue;
+      }
+      await database.notes.put(record);
+      written += 1;
+    }
+  });
+  return written;
 }
 
 /** Reconcile the image-attachment index against the current tree (metadata only). */
@@ -204,7 +295,19 @@ async function indexAttachments(
   if (toPut.length) await database.attachments.bulkPut(toPut);
 }
 
-export function toRecord(path: string, sha: string, raw: string): NoteRecord {
+/**
+ * Build a cache record from raw note text.
+ *
+ * Pass `dirty: true` for an optimistic local write whose commit hasn't been
+ * confirmed yet — sync uses that marker to re-fetch the note if the write is
+ * lost, since the record still carries the pre-edit SHA.
+ */
+export function toRecord(
+  path: string,
+  sha: string,
+  raw: string,
+  opts: { dirty?: boolean } = {},
+): NoteRecord {
   const parsed = parseNote(raw);
   const { frontmatter, body } = splitDoc(raw);
   const { vault, folder, filename } = pathMeta(path);
@@ -222,5 +325,6 @@ export function toRecord(path: string, sha: string, raw: string): NoteRecord {
     frontmatter,
     body,
     updatedAt: Date.now(),
+    ...(opts.dirty ? { dirty: 1 as const } : {}),
   };
 }

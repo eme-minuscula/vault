@@ -22,6 +22,9 @@ export function Settings() {
   async function discardPending() {
     if (!window.confirm(`Discard ${pending} queued write${pending === 1 ? '' : 's'}?`)) return;
     await db().outbox.clear();
+    // Those notes are now unprotected but still unconfirmed; sync immediately so
+    // they're reconciled against the repo rather than lingering until it changes.
+    void run();
   }
 
   async function disconnect() {
