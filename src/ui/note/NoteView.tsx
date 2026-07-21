@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useNote, useVaultNotes, useVaultAttachments, toResolvable } from '../../state/notes';
+import { useNote, useVaultNotes, useVaultAttachments } from '../../state/notes';
 import { stripLeadingH1 } from '../../lib/frontmatter/parse';
-import { findBacklinks, resolveWikiTarget } from '../../lib/vault/links';
+import { findBacklinks, resolveWikiTarget, toResolvable } from '../../lib/vault/links';
 import { resolveAttachmentPath } from '../../lib/vault/attachments';
 import { VAULT_LABELS } from '../../lib/vault/path';
 import { vaultHref } from '../../app/routes';

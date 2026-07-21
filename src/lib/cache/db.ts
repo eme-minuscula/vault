@@ -32,15 +32,34 @@ export interface NoteRecord {
   dirty?: 1;
 }
 
-/** An image attachment index entry. `dataUri` is filled lazily on first display. */
+/**
+ * An image attachment index entry — metadata only.
+ *
+ * The bytes live in `attachmentBlobs`, keyed by content SHA. Keeping them apart
+ * matters: resolving an embed needs the whole vault's attachment index, and if
+ * that carried the images too, opening one note would deserialize every cached
+ * photo in the vault into memory.
+ */
 export interface AttachmentRecord {
   path: string;
   sha: string;
   vault: VaultId;
   filename: string; // includes extension
-  /** base64 data URI, cached after first load (for offline + speed). */
-  dataUri?: string;
   updatedAt: number;
+}
+
+/**
+ * Cached image bytes as a data URI, keyed by the git blob SHA — so identical
+ * images at different paths share one entry. Evicted least-recently-used once
+ * the cache exceeds BLOB_CACHE_MAX_BYTES.
+ */
+export interface AttachmentBlob {
+  sha: string;
+  dataUri: string;
+  /** Byte length of `dataUri`, kept so eviction doesn't have to re-measure. */
+  size: number;
+  /** Last read or write, for LRU. */
+  usedAt: number;
 }
 
 /** A queued write, held while offline and flushed when back online. */
@@ -74,6 +93,7 @@ export class VaultDb extends Dexie {
   meta!: EntityTable<MetaRecord, 'key'>;
   outbox!: EntityTable<OutboxOp, 'id'>;
   attachments!: EntityTable<AttachmentRecord, 'path'>;
+  attachmentBlobs!: EntityTable<AttachmentBlob, 'sha'>;
 
   constructor() {
     super(DB_NAME);
@@ -108,6 +128,25 @@ export class VaultDb extends Dexie {
       outbox: '++id, path',
       attachments: 'path, vault, filename',
     });
+    // v6 moves cached image bytes out of `attachments` into their own SHA-keyed
+    // table, so resolving an embed no longer materializes every cached image.
+    this.version(6)
+      .stores({
+        notes: 'path, vault, type, date, dirty, *tags',
+        meta: 'key',
+        outbox: '++id, path',
+        attachments: 'path, vault, filename',
+        attachmentBlobs: 'sha, usedAt',
+      })
+      .upgrade(async (tx) => {
+        // Drop the now-unused inline copies; they re-fetch on demand.
+        await tx
+          .table('attachments')
+          .toCollection()
+          .modify((a: { dataUri?: string }) => {
+            delete a.dataUri;
+          });
+      });
   }
 
   async getMeta(key: string): Promise<string | null> {
@@ -121,12 +160,21 @@ export class VaultDb extends Dexie {
 
   /** Wipe all cached content (e.g. on sign-out or repo switch). */
   async clearAll(): Promise<void> {
-    await this.transaction('rw', this.notes, this.meta, this.outbox, this.attachments, async () => {
-      await this.notes.clear();
-      await this.meta.clear();
-      await this.outbox.clear();
-      await this.attachments.clear();
-    });
+    await this.transaction(
+      'rw',
+      this.notes,
+      this.meta,
+      this.outbox,
+      this.attachments,
+      this.attachmentBlobs,
+      async () => {
+        await this.attachmentBlobs.clear();
+        await this.notes.clear();
+        await this.meta.clear();
+        await this.outbox.clear();
+        await this.attachments.clear();
+      },
+    );
   }
 }
 

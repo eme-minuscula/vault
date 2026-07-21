@@ -1,4 +1,5 @@
-import type { VaultId } from './path';
+import type { NoteRecord } from '../cache/db';
+import { pathMeta, type VaultId } from './path';
 
 /**
  * Obsidian-style `[[wikilink]]` handling.
@@ -50,6 +51,16 @@ export interface ResolvableNote {
   path: string;
   vault: VaultId;
   filename: string;
+}
+
+/** Map cache records to the shape resolution and backlinks work with. */
+export function toResolvable(notes: readonly NoteRecord[]): (ResolvableNote & { body: string })[] {
+  return notes.map((n) => ({
+    path: n.path,
+    vault: n.vault,
+    filename: pathMeta(n.path).filename,
+    body: n.body,
+  }));
 }
 
 /**
