@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type { VaultId } from '../vault/path';
+import { clearInFlight } from '../vault/attachmentLoader';
 
 /** One cached note. `path` is the repo-relative path and the primary key. */
 export interface NoteRecord {
@@ -136,7 +137,9 @@ export class VaultDb extends Dexie {
         meta: 'key',
         outbox: '++id, path',
         attachments: 'path, vault, filename',
-        attachmentBlobs: 'sha, usedAt',
+        // [usedAt+size] lets eviction read both fields straight from the index,
+        // without deserializing a single dataUri.
+        attachmentBlobs: 'sha, usedAt, [usedAt+size]',
       })
       .upgrade(async (tx) => {
         // Drop the now-unused inline copies; they re-fetch on demand.
@@ -160,6 +163,8 @@ export class VaultDb extends Dexie {
 
   /** Wipe all cached content (e.g. on sign-out or repo switch). */
   async clearAll(): Promise<void> {
+    // Abandon in-flight image loads first, so their bytes can't land after the wipe.
+    clearInFlight(this);
     await this.transaction(
       'rw',
       this.notes,

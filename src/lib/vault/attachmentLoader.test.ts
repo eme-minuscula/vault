@@ -1,7 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VaultDb, type AttachmentBlob } from '../cache/db';
 import type { GitHubClient } from '../github/client';
-import { BLOB_CACHE_MAX_BYTES, ensureAttachmentDataUri, evictBlobs } from './attachmentLoader';
+import {
+  BLOB_CACHE_MAX_BYTES,
+  EVICTION_GRACE_MS,
+  ensureAttachmentDataUri,
+  evictBlobs,
+} from './attachmentLoader';
 
 const PNG_B64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -20,6 +25,11 @@ let db: VaultDb;
 beforeEach(async () => {
   db = new VaultDb();
   await db.clearAll();
+});
+
+afterEach(() => {
+  vi.useRealTimers(); // don't leak a shifted clock into later tests
+  db.close();
 });
 
 describe('ensureAttachmentDataUri', () => {
@@ -78,16 +88,41 @@ describe('evictBlobs', () => {
     usedAt,
   });
 
+  // `now` is far ahead of the fixtures' usedAt so they're all outside the grace window.
+  const LATER = 10 * EVICTION_GRACE_MS;
+
   it('drops least-recently-used blobs until under budget', async () => {
     await db.attachmentBlobs.bulkPut([
       blob('old', 60, 1),
       blob('middle', 60, 2),
       blob('fresh', 60, 3),
     ]);
-    const dropped = await evictBlobs(db, 130);
+    const dropped = await evictBlobs(db, 130, LATER);
     expect(dropped).toBe(1); // 180 -> 120 by removing the oldest
     expect(await db.attachmentBlobs.get('old')).toBeUndefined();
     expect(await db.attachmentBlobs.get('fresh')).toBeDefined();
+  });
+
+  it('never evicts a recently-used blob, even when over budget', async () => {
+    // Everything was just used — as when one note's embeds exceed the budget.
+    // Evicting here would delete an on-screen image and trigger a refetch loop.
+    const now = LATER;
+    await db.attachmentBlobs.bulkPut([
+      blob('a', 100, now - 1_000),
+      blob('b', 100, now - 500),
+      blob('c', 100, now),
+    ]);
+    const dropped = await evictBlobs(db, 150, now);
+    expect(dropped).toBe(0);
+    expect(await db.attachmentBlobs.count()).toBe(3);
+  });
+
+  it('reads sizes without materializing any cached image bytes', async () => {
+    // Guards the regression that made eviction load the whole cache into memory.
+    await db.attachmentBlobs.bulkPut([blob('x', 10, 1), blob('y', 10, 2)]);
+    const spy = vi.spyOn(db.attachmentBlobs, 'toArray');
+    await evictBlobs(db, 5, LATER);
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it('does nothing while within budget', async () => {

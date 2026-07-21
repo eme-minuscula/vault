@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type NoteRecord } from '../lib/cache/db';
 import type { VaultId } from '../lib/vault/path';
@@ -98,12 +98,20 @@ export function useAttachment(path: string | undefined): AttachmentState {
     [row?.sha],
   );
   const [error, setError] = useState(false);
+  // SHAs this component has already tried. Prevents an endless fetch loop if a
+  // blob disappears again after loading (e.g. evicted under cache pressure):
+  // without it, the blob query firing null would re-enter this effect forever.
+  const attempted = useRef(new Set<string>());
 
   useEffect(() => {
-    setError(false);
     if (!row || blob) return;
     const client = currentClient();
-    if (!client) return;
+    if (!client || attempted.current.has(row.sha)) {
+      setError(true);
+      return;
+    }
+    setError(false);
+    attempted.current.add(row.sha);
     let cancelled = false;
     ensureAttachmentDataUri(client, db(), row).catch(() => {
       if (!cancelled) setError(true);
@@ -113,9 +121,14 @@ export function useAttachment(path: string | undefined): AttachmentState {
     };
   }, [row, blob]);
 
+  // Only pair bytes with the metadata they belong to: useLiveQuery keeps its
+  // previous result while re-running, so the two can briefly disagree and show
+  // the wrong image for a frame.
+  const paired = blob && row && blob.sha === row.sha ? blob : undefined;
+
   return {
-    dataUri: blob?.dataUri,
-    loading: !!row && !blob && !error,
+    dataUri: paired?.dataUri,
+    loading: !!row && !paired && !error,
     error: error || (path !== undefined && row === null),
   };
 }

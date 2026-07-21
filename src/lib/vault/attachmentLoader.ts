@@ -14,11 +14,33 @@ import { mimeFor } from './attachments';
  * large image vault can't exhaust the device's storage quota.
  */
 
-/** Cap on cached image bytes. Generous for a personal vault, bounded on a phone. */
+/**
+ * Cap on cached image bytes. Measured in data-URI characters; IndexedDB stores
+ * strings as UTF-16, so the on-disk footprint is roughly twice this. Generous
+ * for a personal vault, bounded on a phone.
+ */
 export const BLOB_CACHE_MAX_BYTES = 40 * 1024 * 1024;
 
-// In-flight loads keyed by SHA, so the same image is never fetched twice at once.
+/**
+ * Blobs touched more recently than this are never evicted. Without it, a note
+ * whose embeds exceed the budget would evict an image that is still on screen,
+ * and the live query would immediately re-fetch it — an endless request loop.
+ */
+export const EVICTION_GRACE_MS = 60_000;
+
+// In-flight loads, keyed by database *and* SHA: two VaultDb instances (or a
+// wipe-and-recreate) must not share entries, or bytes from a load started before
+// "Disconnect & clear cache" could land in the freshly cleared database.
 const inFlight = new Map<string, Promise<string>>();
+
+const flightKey = (db: VaultDb, sha: string) => `${db.name}:${sha}`;
+
+/** Abandon in-flight loads for a database — called when its contents are wiped. */
+export function clearInFlight(db: { name: string }): void {
+  for (const key of [...inFlight.keys()]) {
+    if (key.startsWith(`${db.name}:`)) inFlight.delete(key);
+  }
+}
 
 /** Cached data URI for an attachment, fetching and storing it on first use. */
 export async function ensureAttachmentDataUri(
@@ -33,7 +55,8 @@ export async function ensureAttachmentDataUri(
     return cached.dataUri;
   }
 
-  const existing = inFlight.get(row.sha);
+  const key = flightKey(db, row.sha);
+  const existing = inFlight.get(key);
   if (existing) return existing;
 
   const load = (async () => {
@@ -49,30 +72,49 @@ export async function ensureAttachmentDataUri(
     return dataUri;
   })();
 
-  inFlight.set(row.sha, load);
+  inFlight.set(key, load);
   try {
     return await load;
   } finally {
-    inFlight.delete(row.sha);
+    inFlight.delete(key);
   }
 }
 
-/** Drop least-recently-used blobs until the cache is back within budget. */
-export async function evictBlobs(db: VaultDb, maxBytes = BLOB_CACHE_MAX_BYTES): Promise<number> {
+/**
+ * Drop least-recently-used blobs until the cache is back within budget.
+ *
+ * Reads sizes and SHAs from indexes only — never materializing a `dataUri` —
+ * because this runs on every image insert, and loading the whole cache here
+ * would recreate the very problem the split table exists to solve.
+ */
+export async function evictBlobs(
+  db: VaultDb,
+  maxBytes = BLOB_CACHE_MAX_BYTES,
+  now = Date.now(),
+): Promise<number> {
+  // Both scans walk the same [usedAt+size] index in the same order, so entry i
+  // of each refers to the same row. Key-only cursors: no values are read.
+  const ordered = db.attachmentBlobs.orderBy('[usedAt+size]');
+  const keys = (await ordered.keys()) as unknown as [number, number][];
   let total = 0;
-  await db.attachmentBlobs.each((b) => {
-    total += b.size;
-  });
+  for (const [, size] of keys) total += size;
   if (total <= maxBytes) return 0;
 
-  // Oldest first; stop as soon as we're under budget.
-  const byAge = await db.attachmentBlobs.orderBy('usedAt').toArray();
+  const shas = await db.attachmentBlobs.orderBy('[usedAt+size]').primaryKeys();
+
   const doomed: string[] = [];
-  for (const blob of byAge) {
-    if (total <= maxBytes) break;
-    doomed.push(blob.sha);
-    total -= blob.size;
+  for (let i = 0; i < keys.length && total > maxBytes; i++) {
+    const entry = keys[i];
+    const sha = shas[i];
+    if (!entry || sha === undefined) break;
+    const [usedAt, size] = entry;
+    // Ascending by usedAt, so once we reach a recently-used blob everything
+    // after it is newer too — stop rather than evict something on screen.
+    if (usedAt > now - EVICTION_GRACE_MS) break;
+    doomed.push(sha);
+    total -= size;
   }
+
   if (doomed.length) await db.attachmentBlobs.bulkDelete(doomed);
   return doomed.length;
 }
