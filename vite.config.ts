@@ -81,6 +81,11 @@ export default defineConfig(({ command }) => {
         // without ever reloading mid-edit.
         registerType: 'prompt',
         injectRegister: null,
+        // Explicit because the precache depends on it: the icons are excluded from
+        // globPatterns below (they were being added twice), so this is what keeps
+        // them precached exactly once. Flipping it to false would silently drop
+        // them from the offline app shell.
+        includeManifestIcons: true,
         manifest: {
           name: 'Vault',
           short_name: 'Vault',
