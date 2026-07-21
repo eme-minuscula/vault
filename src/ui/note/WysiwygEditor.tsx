@@ -60,6 +60,9 @@ export const WysiwygEditor = forwardRef<
         const crepe = new Crepe({
           root: rootRef.current,
           defaultValue: defaultRef.current,
+          // Turning this on also requires restoring the KaTeX stylesheet: it is
+          // aliased away in vite.config.ts (see src/styles/no-katex.css), so
+          // enabling maths alone would render it with no styles at all.
           features: { [Crepe.Feature.Latex]: false },
         });
         await crepe.create();

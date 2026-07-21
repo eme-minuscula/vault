@@ -32,6 +32,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Re-verify before publishing. CI runs on the same pushes, but the two
+      # workflows are independent and parallel — a red CI does not stop this job
+      # from publishing. Running the checks here means a failure leaves the site on
+      # the last good build instead of shipping broken code. (format:check is
+      # deliberately omitted: formatting should gate review, not a release.)
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
       - name: Build
         run: npm run build
 
