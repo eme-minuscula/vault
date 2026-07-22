@@ -10,6 +10,8 @@
  * app indexes on and otherwise leaves content untouched.
  */
 
+import { splitDoc } from './doc';
+
 export interface Frontmatter {
   type: string | null;
   tags: string[];
@@ -29,13 +31,13 @@ export interface ParsedNote {
   snippet: string;
 }
 
-const FENCE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 const SNIPPET_MAX = 200;
 
 export function parseNote(raw: string): ParsedNote {
-  const match = FENCE.exec(raw);
-  const rawFrontmatter = match ? (match[1] ?? '') : null;
-  const body = match ? raw.slice(match[0].length) : raw;
+  // Use the same split as the lossless document model, so there is exactly one
+  // definition of where frontmatter ends. `block` includes the fences.
+  const { frontmatter: block, body } = splitDoc(raw);
+  const rawFrontmatter = block ? unfence(block) : null;
   const frontmatter = rawFrontmatter
     ? parseFrontmatter(rawFrontmatter)
     : { type: null, tags: [], active: false, date: null };
@@ -47,6 +49,11 @@ export function parseNote(raw: string): ParsedNote {
     heading: firstHeading(body),
     snippet: makeSnippet(body),
   };
+}
+
+/** Strip the `---` fences (and the newline after the closing one) from a block. */
+function unfence(block: string): string {
+  return block.replace(/^---\r?\n/, '').replace(/\r?\n---\r?\n?$/, '');
 }
 
 function parseFrontmatter(block: string): Frontmatter {

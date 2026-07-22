@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import type { NoteRecord } from '../lib/cache/db';
 import { VAULT_LABELS } from '../lib/vault/path';
-import { noteHref } from '../app/routes';
+import { notePathname } from '../app/routes';
 
 /** A tappable note row used in search results and the active view. */
 export function NoteCard({
@@ -15,8 +16,8 @@ export function NoteCard({
   showVault?: boolean;
 }) {
   return (
-    <a
-      href={noteHref(note.path)}
+    <Link
+      to={notePathname(note.path)}
       className="block rounded-lg px-3 py-3 no-underline transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-900"
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -34,6 +35,6 @@ export function NoteCard({
         )}
       </div>
       <p className="mt-0.5 line-clamp-2 text-sm text-neutral-500">{preview ?? note.snippet}</p>
-    </a>
+    </Link>
   );
 }
