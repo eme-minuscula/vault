@@ -63,30 +63,64 @@ export function toResolvable(notes: readonly NoteRecord[]): (ResolvableNote & { 
   }));
 }
 
+export interface WikiResolver {
+  /** Resolve a wikilink target to a note path within `vault`, or null. */
+  resolve(target: string, vault: VaultId): string | null;
+}
+
 /**
- * Resolve a wikilink target to a note path within the same vault.
- * Prefers an exact basename match; falls back to a path-suffix match for
- * targets that include a folder (e.g. `People/Alice`). Case-insensitive.
- * Returns null when nothing (or something ambiguous) matches.
+ * Build a reusable resolver over a note corpus.
+ *
+ * Indexes basename → paths up front, so the common case (a plain `[[Name]]`) is
+ * an O(1) map lookup instead of a full-corpus scan. Reuse the resolver across
+ * many links — rebuilding it per call turns backlink computation quadratic.
+ */
+export function buildWikiResolver(notes: readonly ResolvableNote[]): WikiResolver {
+  const byName = new Map<string, string[]>(); // `${vault}\n${filenameLower}` -> paths
+  const byVault = new Map<VaultId, ResolvableNote[]>();
+  for (const n of notes) {
+    const key = `${n.vault}\n${n.filename.toLowerCase()}`;
+    const bucket = byName.get(key);
+    if (bucket) bucket.push(n.path);
+    else byName.set(key, [n.path]);
+
+    const vaultBucket = byVault.get(n.vault);
+    if (vaultBucket) vaultBucket.push(n);
+    else byVault.set(n.vault, [n]);
+  }
+
+  return {
+    resolve(target, vault) {
+      if (!target) return null;
+      const needle = target.toLowerCase().replace(/\.md$/i, '');
+
+      // Folder-qualified target (`People/Alice`) → path-suffix match. Rare, so a
+      // scoped scan is fine; the common basename case is indexed below.
+      if (needle.includes('/')) {
+        const withExt = `${needle}.md`;
+        const hits = (byVault.get(vault) ?? []).filter((n) =>
+          n.path.toLowerCase().endsWith(withExt),
+        );
+        return hits.length === 1 ? (hits[0]?.path ?? null) : null;
+      }
+
+      const paths = byName.get(`${vault}\n${needle}`);
+      // Unique match only — an ambiguous basename resolves to nothing, as before.
+      return paths && paths.length === 1 ? (paths[0] ?? null) : null;
+    },
+  };
+}
+
+/**
+ * Resolve a single wikilink target within a vault. Convenience for one-off
+ * resolution; when resolving many links, build a {@link WikiResolver} once.
  */
 export function resolveWikiTarget(
   target: string,
   vault: VaultId,
   notes: readonly ResolvableNote[],
 ): string | null {
-  if (!target) return null;
-  const needle = target.toLowerCase().replace(/\.md$/i, '');
-  const inVault = notes.filter((n) => n.vault === vault);
-
-  if (needle.includes('/')) {
-    const withExt = `${needle}.md`;
-    const hits = inVault.filter((n) => n.path.toLowerCase().endsWith(withExt));
-    return hits.length === 1 ? (hits[0]?.path ?? null) : null;
-  }
-
-  const hits = inVault.filter((n) => n.filename.toLowerCase() === needle);
-  if (hits.length === 1) return hits[0]?.path ?? null;
-  return null; // no match, or ambiguous (multiple same-named notes)
+  return buildWikiResolver(notes).resolve(target, vault);
 }
 
 /**
@@ -98,12 +132,14 @@ export function findBacklinks(
   targetVault: VaultId,
   corpus: readonly (ResolvableNote & { body: string })[],
 ): string[] {
+  const resolver = buildWikiResolver(corpus); // built once, not per link
   const out: string[] = [];
   for (const note of corpus) {
     if (note.path === targetPath || note.vault !== targetVault) continue;
     const links = extractWikiLinks(note.body);
-    const hit = links.some((l) => resolveWikiTarget(l.target, targetVault, corpus) === targetPath);
-    if (hit) out.push(note.path);
+    if (links.some((l) => resolver.resolve(l.target, targetVault) === targetPath)) {
+      out.push(note.path);
+    }
   }
   return out;
 }

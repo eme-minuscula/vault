@@ -1,8 +1,7 @@
 import { useDeferredValue, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAllNotes } from '../../state/notes';
-import { searchNotes } from '../../lib/search/search';
-import { excerpt } from '../../lib/search/search';
+import { buildSearchIndex, excerpt, searchIndex } from '../../lib/search/search';
 import { VAULT_LABELS, type VaultId } from '../../lib/vault/path';
 import { NoteCard } from '../NoteCard';
 import { highlight } from './highlight';
@@ -18,13 +17,17 @@ export function SearchView() {
   const [vault, setVault] = useState<VaultId | 'all'>('all');
   const [activeOnly, setActiveOnly] = useState(false);
 
-  const hits = useMemo(() => {
-    if (!notes) return [];
-    return searchNotes(notes, deferredQuery, {
-      vault: vault === 'all' ? undefined : vault,
-      activeOnly,
-    });
-  }, [notes, deferredQuery, vault, activeOnly]);
+  // Lowercase the corpus once per note-set, not on every keystroke.
+  const index = useMemo(() => buildSearchIndex(notes ?? []), [notes]);
+
+  const hits = useMemo(
+    () =>
+      searchIndex(index, deferredQuery, {
+        vault: vault === 'all' ? undefined : vault,
+        activeOnly,
+      }),
+    [index, deferredQuery, vault, activeOnly],
+  );
 
   const hasQuery = deferredQuery.trim().length > 0;
 
