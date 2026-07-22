@@ -69,6 +69,50 @@ describe('resolveWikiTarget', () => {
   });
 });
 
+describe('resolve by title and alias', () => {
+  const rich: ResolvableNote[] = [
+    { path: 'w/People/wk.md', vault: 'w', filename: 'wk', title: 'Wes Kao', aliases: ['WK'] },
+    // Its alias 'wk' collides with the note above's *filename* — used to prove the
+    // filename tier wins.
+    {
+      path: 'w/Notes/comms.md',
+      vault: 'w',
+      filename: 'comms',
+      title: 'Communication',
+      aliases: ['wk'],
+    },
+    { path: 'r/People/person.md', vault: 'r', filename: 'person', title: 'Solo' },
+  ];
+
+  it('resolves a link written against a title', () => {
+    expect(resolveWikiTarget('Communication', 'w', rich)).toBe('w/Notes/comms.md');
+    expect(resolveWikiTarget('Wes Kao', 'w', rich)).toBe('w/People/wk.md');
+  });
+
+  it('resolves a link written against an alias', () => {
+    expect(resolveWikiTarget('WK', 'w', rich)).toBe('w/People/wk.md');
+  });
+
+  it('prefers filename over an alias that collides with it', () => {
+    // 'wk' is a filename (People/wk) and an alias (Notes/comms); filename wins.
+    expect(resolveWikiTarget('wk', 'w', rich)).toBe('w/People/wk.md');
+  });
+
+  it('keeps title/alias resolution within the vault', () => {
+    // 'Wes Kao' is a title, 'WK' an alias — both only in w; from r, neither crosses.
+    expect(resolveWikiTarget('Wes Kao', 'r', rich)).toBeNull();
+    expect(resolveWikiTarget('WK', 'r', rich)).toBeNull();
+  });
+
+  it('an ambiguous title resolves to nothing', () => {
+    const dupes: ResolvableNote[] = [
+      { path: 'w/a.md', vault: 'w', filename: 'a', title: 'Shared' },
+      { path: 'w/b.md', vault: 'w', filename: 'b', title: 'Shared' },
+    ];
+    expect(resolveWikiTarget('Shared', 'w', dupes)).toBeNull();
+  });
+});
+
 describe('buildWikiResolver', () => {
   it('matches resolveWikiTarget for every case, from one built index', () => {
     const resolver = buildWikiResolver(notes);

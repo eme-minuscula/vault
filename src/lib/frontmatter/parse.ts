@@ -17,6 +17,8 @@ export interface Frontmatter {
   tags: string[];
   active: boolean;
   date: string | null;
+  /** Obsidian `aliases:` (or `alias:`) — alternative names a wikilink can use. */
+  aliases: string[];
 }
 
 export interface ParsedNote {
@@ -40,7 +42,7 @@ export function parseNote(raw: string): ParsedNote {
   const rawFrontmatter = block ? unfence(block) : null;
   const frontmatter = rawFrontmatter
     ? parseFrontmatter(rawFrontmatter)
-    : { type: null, tags: [], active: false, date: null };
+    : { type: null, tags: [], active: false, date: null, aliases: [] };
 
   return {
     frontmatter,
@@ -57,7 +59,7 @@ function unfence(block: string): string {
 }
 
 function parseFrontmatter(block: string): Frontmatter {
-  const fm: Frontmatter = { type: null, tags: [], active: false, date: null };
+  const fm: Frontmatter = { type: null, tags: [], active: false, date: null, aliases: [] };
   const lines = block.split(/\r?\n/);
 
   for (let i = 0; i < lines.length; i++) {
@@ -78,29 +80,42 @@ function parseFrontmatter(block: string): Frontmatter {
         fm.date = unquote(value) || null;
         break;
       case 'tags': {
-        if (value) {
-          fm.tags = parseInlineList(value);
-        } else {
-          // Block list form:
-          //   tags:
-          //     - a
-          //     - b
-          const collected: string[] = [];
-          let j = i + 1;
-          for (; j < lines.length; j++) {
-            const item = /^\s*-\s+(.*)$/.exec(lines[j] ?? '');
-            if (!item) break;
-            const t = unquote((item[1] ?? '').trim());
-            if (t) collected.push(t);
-          }
-          fm.tags = collected;
-          i = j - 1;
-        }
+        const { list, nextIndex } = readList(value, lines, i);
+        fm.tags = list;
+        i = nextIndex;
+        break;
+      }
+      case 'alias':
+      case 'aliases': {
+        const { list, nextIndex } = readList(value, lines, i);
+        fm.aliases = list;
+        i = nextIndex;
         break;
       }
     }
   }
   return fm;
+}
+
+/**
+ * Read a YAML list value that may be inline (`[a, b]`) or a block list on the
+ * following lines. Returns the items and the index of the last consumed line.
+ */
+function readList(
+  value: string,
+  lines: string[],
+  keyIndex: number,
+): { list: string[]; nextIndex: number } {
+  if (value) return { list: parseInlineList(value), nextIndex: keyIndex };
+  const list: string[] = [];
+  let j = keyIndex + 1;
+  for (; j < lines.length; j++) {
+    const item = /^\s*-\s+(.*)$/.exec(lines[j] ?? '');
+    if (!item) break;
+    const t = unquote((item[1] ?? '').trim());
+    if (t) list.push(t);
+  }
+  return { list, nextIndex: j - 1 };
 }
 
 function parseInlineList(value: string): string[] {

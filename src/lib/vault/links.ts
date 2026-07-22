@@ -51,6 +51,10 @@ export interface ResolvableNote {
   path: string;
   vault: VaultId;
   filename: string;
+  /** Display title (H1 if present, else filename) — a wikilink may name this. */
+  title?: string;
+  /** Obsidian `aliases:` — additional names a wikilink may use. */
+  aliases?: readonly string[];
 }
 
 /** Map cache records to the shape resolution and backlinks work with. */
@@ -59,6 +63,8 @@ export function toResolvable(notes: readonly NoteRecord[]): (ResolvableNote & { 
     path: n.path,
     vault: n.vault,
     filename: pathMeta(n.path).filename,
+    title: n.title,
+    aliases: n.aliases,
     body: n.body,
   }));
 }
@@ -71,23 +77,43 @@ export interface WikiResolver {
 /**
  * Build a reusable resolver over a note corpus.
  *
- * Indexes basename → paths up front, so the common case (a plain `[[Name]]`) is
- * an O(1) map lookup instead of a full-corpus scan. Reuse the resolver across
- * many links — rebuilding it per call turns backlink computation quadratic.
+ * A wikilink target is matched, in order, against filename → title → alias, all
+ * within the same vault. Each is indexed up front, so the common `[[Name]]` is an
+ * O(1) lookup instead of a full-corpus scan — reuse the resolver across many
+ * links, since rebuilding it per call turns backlink computation quadratic.
  */
 export function buildWikiResolver(notes: readonly ResolvableNote[]): WikiResolver {
-  const byName = new Map<string, string[]>(); // `${vault}\n${filenameLower}` -> paths
+  const byName = new Map<string, string[]>(); // `${vault}\n${lower}` -> paths
+  const byTitle = new Map<string, string[]>();
+  const byAlias = new Map<string, string[]>();
   const byVault = new Map<VaultId, ResolvableNote[]>();
+
+  const add = (map: Map<string, string[]>, vault: VaultId, name: string, path: string) => {
+    const key = `${vault}\n${name.toLowerCase()}`;
+    const bucket = map.get(key);
+    if (bucket) bucket.push(path);
+    else map.set(key, [path]);
+  };
+
   for (const n of notes) {
-    const key = `${n.vault}\n${n.filename.toLowerCase()}`;
-    const bucket = byName.get(key);
-    if (bucket) bucket.push(n.path);
-    else byName.set(key, [n.path]);
+    add(byName, n.vault, n.filename, n.path);
+    // A headingless note's title falls back to its filename, so byTitle can
+    // duplicate a byName entry. Harmless: byName resolves first, and a same-tier
+    // duplicate only ever yields null (never a wrong guess).
+    if (n.title) add(byTitle, n.vault, n.title, n.path);
+    for (const alias of n.aliases ?? []) add(byAlias, n.vault, alias, n.path);
 
     const vaultBucket = byVault.get(n.vault);
     if (vaultBucket) vaultBucket.push(n);
     else byVault.set(n.vault, [n]);
   }
+
+  // A tier resolves only on a unique match; an absent or ambiguous one falls
+  // through to the next tier (and ultimately to null).
+  const unique = (map: Map<string, string[]>, vault: VaultId, needle: string): string | null => {
+    const paths = map.get(`${vault}\n${needle}`);
+    return paths && paths.length === 1 ? (paths[0] ?? null) : null;
+  };
 
   return {
     resolve(target, vault) {
@@ -95,7 +121,7 @@ export function buildWikiResolver(notes: readonly ResolvableNote[]): WikiResolve
       const needle = target.toLowerCase().replace(/\.md$/i, '');
 
       // Folder-qualified target (`People/Alice`) → path-suffix match. Rare, so a
-      // scoped scan is fine; the common basename case is indexed below.
+      // scoped scan is fine; the common cases are indexed.
       if (needle.includes('/')) {
         const withExt = `${needle}.md`;
         const hits = (byVault.get(vault) ?? []).filter((n) =>
@@ -104,9 +130,11 @@ export function buildWikiResolver(notes: readonly ResolvableNote[]): WikiResolve
         return hits.length === 1 ? (hits[0]?.path ?? null) : null;
       }
 
-      const paths = byName.get(`${vault}\n${needle}`);
-      // Unique match only — an ambiguous basename resolves to nothing, as before.
-      return paths && paths.length === 1 ? (paths[0] ?? null) : null;
+      return (
+        unique(byName, vault, needle) ??
+        unique(byTitle, vault, needle) ??
+        unique(byAlias, vault, needle)
+      );
     },
   };
 }
