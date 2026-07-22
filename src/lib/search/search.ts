@@ -24,56 +24,95 @@ export interface SearchHit {
 
 const WEIGHT = { title: 5, tag: 3, type: 3, name: 2, body: 1 } as const;
 
-export function searchNotes(
-  notes: readonly NoteRecord[],
+interface Haystack {
+  title: string;
+  tags: string;
+  type: string;
+  name: string;
+  body: string;
+}
+
+interface IndexedNote {
+  note: NoteRecord;
+  hay: Haystack;
+}
+
+export type SearchIndex = readonly IndexedNote[];
+
+/**
+ * Precompute the lowercased fields each note is searched over.
+ *
+ * Build this once per note-set (memoized in the UI) rather than per query —
+ * otherwise every keystroke re-lowercases every note body, which is the dominant
+ * cost of search at vault scale.
+ */
+export function buildSearchIndex(notes: readonly NoteRecord[]): SearchIndex {
+  return notes.map((note) => ({
+    note,
+    hay: {
+      title: note.title.toLowerCase(),
+      tags: note.tags.join(' ').toLowerCase(),
+      type: (note.type ?? '').toLowerCase(),
+      name: note.path.toLowerCase(),
+      body: note.body.toLowerCase(),
+    },
+  }));
+}
+
+/** Search a prebuilt index. */
+export function searchIndex(
+  index: SearchIndex,
   query: string,
   filters: SearchFilters = {},
   limit = 100,
 ): SearchHit[] {
   const terms = tokenize(query);
 
-  const filtered = notes.filter(
-    (n) =>
-      (!filters.vault || n.vault === filters.vault) &&
-      (!filters.type || n.type === filters.type) &&
-      (!filters.activeOnly || n.active),
-  );
+  const matchesFilters = ({ note }: IndexedNote) =>
+    (!filters.vault || note.vault === filters.vault) &&
+    (!filters.type || note.type === filters.type) &&
+    (!filters.activeOnly || note.active);
 
   // With no query, this is a pure filter (used by the Active view, type filters).
   if (terms.length === 0) {
-    return filtered
-      .map((note) => ({ note, score: 0 }))
+    return index
+      .filter(matchesFilters)
+      .map(({ note }) => ({ note, score: 0 }))
       .sort((a, b) => a.note.title.localeCompare(b.note.title))
       .slice(0, limit);
   }
 
   const hits: SearchHit[] = [];
-  for (const note of filtered) {
-    const fields = {
-      title: note.title.toLowerCase(),
-      tags: note.tags.join(' ').toLowerCase(),
-      type: (note.type ?? '').toLowerCase(),
-      name: note.path.toLowerCase(),
-      body: note.body.toLowerCase(),
-    };
+  for (const entry of index) {
+    if (!matchesFilters(entry)) continue;
     let total = 0;
     let matchedAll = true;
     for (const term of terms) {
-      const s = scoreTerm(term, fields);
+      const s = scoreTerm(term, entry.hay);
       if (s === 0) {
         matchedAll = false;
         break;
       }
       total += s;
     }
-    if (matchedAll) hits.push({ note, score: total });
+    if (matchedAll) hits.push({ note: entry.note, score: total });
   }
 
   hits.sort((a, b) => b.score - a.score || a.note.title.localeCompare(b.note.title));
   return hits.slice(0, limit);
 }
 
-function scoreTerm(term: string, f: Record<'title' | 'tags' | 'type' | 'name' | 'body', string>) {
+/** Convenience: build an index and search it in one call (used in tests). */
+export function searchNotes(
+  notes: readonly NoteRecord[],
+  query: string,
+  filters: SearchFilters = {},
+  limit = 100,
+): SearchHit[] {
+  return searchIndex(buildSearchIndex(notes), query, filters, limit);
+}
+
+function scoreTerm(term: string, f: Haystack) {
   if (f.title.includes(term)) return WEIGHT.title;
   if (f.tags.includes(term)) return WEIGHT.tag;
   if (f.type.includes(term)) return WEIGHT.type;

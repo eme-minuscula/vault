@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildWikiResolver,
   extractWikiLinks,
   findBacklinks,
   parseWikiTarget,
@@ -65,6 +66,25 @@ describe('resolveWikiTarget', () => {
 
   it('returns null for an unknown target', () => {
     expect(resolveWikiTarget('Nobody', 'w', notes)).toBeNull();
+  });
+});
+
+describe('buildWikiResolver', () => {
+  it('matches resolveWikiTarget for every case, from one built index', () => {
+    const resolver = buildWikiResolver(notes);
+    const cases: [string, 'w' | 'm' | 'r'][] = [
+      ['Alice', 'w'],
+      ['Alice', 'm'],
+      ['Alice', 'r'],
+      ['Plan', 'w'],
+      ['Projects/COS/Plan', 'w'],
+      ['alice.md', 'w'],
+      ['Nobody', 'w'],
+      ['', 'w'],
+    ];
+    for (const [target, vault] of cases) {
+      expect(resolver.resolve(target, vault)).toBe(resolveWikiTarget(target, vault, notes));
+    }
   });
 });
 
