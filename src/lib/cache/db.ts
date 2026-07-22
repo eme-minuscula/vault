@@ -192,8 +192,16 @@ export function db(): VaultDb {
   return instance;
 }
 
-/** Delete the entire IndexedDB database from disk. */
+/**
+ * Delete the entire IndexedDB database from disk.
+ *
+ * This — not `clearAll` — is the path "Disconnect & clear cache" takes, so it
+ * must abandon in-flight image loads too: otherwise their writes are only stopped
+ * incidentally by `close()`, and their stale keys survive into the recreated
+ * database, where a fresh request for the same image would join a doomed promise.
+ */
 export async function deleteDatabase(): Promise<void> {
+  clearInFlight(DB_NAME);
   if (instance) {
     instance.close();
     instance = null;
