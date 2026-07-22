@@ -65,6 +65,6 @@ export function resolveAttachmentPath(
     if (bySuffix.length === 1) return bySuffix[0]?.path ?? null;
   }
 
-  // Basename collision or no match.
-  return byName.length === 1 ? (byName[0]?.path ?? null) : null;
+  // No match, or an ambiguous basename shared by several attachments.
+  return null;
 }

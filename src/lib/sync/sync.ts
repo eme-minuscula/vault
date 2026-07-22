@@ -293,6 +293,16 @@ async function indexAttachments(
 
   if (toDelete.length) await database.attachments.bulkDelete(toDelete);
   if (toPut.length) await database.attachments.bulkPut(toPut);
+
+  // Drop cached bytes no metadata row references any more (image deleted or
+  // replaced upstream). Otherwise they'd linger until LRU pressure — possibly
+  // never, while under budget. Key-only scan: no dataUri is materialized.
+  if (!truncated) {
+    const live = new Set(desired.values());
+    const cached = await database.attachmentBlobs.orderBy('sha').primaryKeys();
+    const orphans = cached.filter((sha) => !live.has(sha));
+    if (orphans.length) await database.attachmentBlobs.bulkDelete(orphans);
+  }
 }
 
 /**
