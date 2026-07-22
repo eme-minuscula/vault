@@ -1,6 +1,7 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type { VaultId } from '../vault/path';
 import { clearInFlight } from '../inFlightRegistry';
+import { parseNote } from '../frontmatter/parse';
 
 /** One cached note. `path` is the repo-relative path and the primary key. */
 export interface NoteRecord {
@@ -150,6 +151,28 @@ export class VaultDb extends Dexie {
           .toCollection()
           .modify((a: { dataUri?: string }) => {
             delete a.dataUri;
+          });
+      });
+    // v7 backfills `aliases` on notes cached before the field existed. Sync only
+    // re-fetches a note when its blob SHA changes, so without this, aliases would
+    // stay unset on every unchanged note — the resolver would keep ignoring them.
+    // The verbatim `frontmatter` block is already stored, so we re-parse it
+    // locally; no GitHub request, no resync.
+    this.version(7)
+      .stores({
+        notes: 'path, vault, type, date, dirty, *tags',
+        meta: 'key',
+        outbox: '++id, path',
+        attachments: 'path, vault, filename',
+        attachmentBlobs: 'sha, usedAt, [usedAt+size]',
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table('notes')
+          .toCollection()
+          .modify((n: NoteRecord) => {
+            if (!n.aliases)
+              n.aliases = n.frontmatter ? parseNote(n.frontmatter).frontmatter.aliases : [];
           });
       });
   }

@@ -97,6 +97,9 @@ export function buildWikiResolver(notes: readonly ResolvableNote[]): WikiResolve
 
   for (const n of notes) {
     add(byName, n.vault, n.filename, n.path);
+    // A headingless note's title falls back to its filename, so byTitle can
+    // duplicate a byName entry. Harmless: byName resolves first, and a same-tier
+    // duplicate only ever yields null (never a wrong guess).
     if (n.title) add(byTitle, n.vault, n.title, n.path);
     for (const alias of n.aliases ?? []) add(byAlias, n.vault, alias, n.path);
 
