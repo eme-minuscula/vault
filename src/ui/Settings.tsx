@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { db, deleteDatabase } from '../lib/cache/db';
+import { db, deleteDatabase, DB_DELETE_BLOCKED } from '../lib/cache/db';
 import { useSettings } from '../state/settings';
 import { useSync } from '../state/sync';
 import { useTheme, type Theme } from '../state/theme';
@@ -15,6 +15,7 @@ export function Settings() {
   const counts = useVaultCounts();
   const pending = usePendingCount();
   const [prefixText, setPrefixText] = useState(ignoredPrefixes.join('\n'));
+  const [disconnectError, setDisconnectError] = useState<string | null>(null);
 
   const total = counts ? Object.values(counts).reduce((a, b) => a + b, 0) : undefined;
   const syncing = status === 'syncing';
@@ -28,11 +29,17 @@ export function Settings() {
   }
 
   async function disconnect() {
-    forget();
+    setDisconnectError(null);
+    forget(); // token is gone regardless of what the cache delete does
     try {
       await deleteDatabase();
-    } catch {
-      /* token already cleared; cache is recoverable */
+    } catch (err) {
+      // The only expected failure is another open Vault tab blocking the delete.
+      setDisconnectError(
+        err instanceof Error && err.message === DB_DELETE_BLOCKED
+          ? 'Close any other open Vault tabs, then try again to finish clearing the cache.'
+          : 'Could not fully clear the local cache. Your token has been removed.',
+      );
     }
   }
 
@@ -50,7 +57,7 @@ export function Settings() {
       <div>
         <Link
           to="/"
-          className="text-sm text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+          className="text-sm text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
         >
           ← Library
         </Link>
@@ -97,7 +104,7 @@ export function Settings() {
         <p className="mt-1 text-sm text-neutral-500">
           {owner}/{repo} · {branch}
         </p>
-        <p className="mt-1 text-sm text-neutral-400">
+        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
           {total ?? '—'} notes cached{lastSyncAt ? ` · synced ${relativeTime(lastSyncAt)}` : ''}
         </p>
         <div className="mt-3 flex items-center gap-3">
@@ -171,6 +178,9 @@ export function Settings() {
         >
           Disconnect &amp; clear cache
         </button>
+        {disconnectError && (
+          <p className="mt-3 text-sm text-red-700 dark:text-red-300">{disconnectError}</p>
+        )}
       </section>
     </div>
   );

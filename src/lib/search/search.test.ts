@@ -67,6 +67,15 @@ describe('searchNotes', () => {
     expect(searchNotes(notes, 'learning').map((h) => h.note.path)).toEqual(['w/Agenda.md']);
   });
 
+  it('matches an alias, ranked above a body hit', () => {
+    const withAlias = [
+      note({ path: 'w/WesKao.md', title: 'Wes Kao', aliases: ['WK'] }),
+      note({ path: 'w/Other.md', title: 'Other', body: 'mentions wk in passing' }),
+    ];
+    const hits = searchNotes(withAlias, 'wk');
+    expect(hits.map((h) => h.note.path)).toEqual(['w/WesKao.md', 'w/Other.md']); // alias > body
+  });
+
   it('applies vault and active filters', () => {
     expect(searchNotes(notes, 'agenda', { vault: 'r' })).toEqual([]);
     const active = searchNotes(notes, '', { activeOnly: true });

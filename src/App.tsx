@@ -80,7 +80,11 @@ export function App() {
               <Route
                 path="/note/*"
                 element={
-                  <Suspense fallback={<p className="text-sm text-neutral-400">Loading…</p>}>
+                  <Suspense
+                    fallback={
+                      <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading…</p>
+                    }
+                  >
                     <NoteView />
                   </Suspense>
                 }

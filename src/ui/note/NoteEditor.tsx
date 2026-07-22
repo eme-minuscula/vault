@@ -107,7 +107,7 @@ export function NoteEditor({
       <div className="flex items-center justify-between">
         <button
           onClick={() => void navigate(backTo)}
-          className="text-sm text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+          className="text-sm text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
         >
           Cancel
         </button>
@@ -159,7 +159,7 @@ export function NoteEditor({
         </p>
       )}
 
-      <p className="text-xs text-neutral-400">
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">
         {mode === 'wysiwyg'
           ? 'Visual editing of the body — formatting may be normalized on save. Frontmatter is preserved; switch to Markdown for exact control.'
           : 'Editing raw markdown, including frontmatter — exactly what gets committed.'}

@@ -38,12 +38,15 @@ export function NoteView() {
   }, [note, resolvable]);
 
   if (note === undefined) {
-    return <p className="text-sm text-neutral-400">Loading…</p>;
+    return <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading…</p>;
   }
   if (note === null) {
     return (
       <div>
-        <Link to="/" className="text-sm text-neutral-400 hover:text-neutral-700">
+        <Link
+          to="/"
+          className="text-sm text-neutral-500 hover:text-neutral-700 dark:text-neutral-400"
+        >
           ← Library
         </Link>
         <p className="mt-6 text-neutral-500">
@@ -57,7 +60,7 @@ export function NoteView() {
     <article>
       <Link
         to={vaultHref(note.vault).slice(1)}
-        className="text-sm text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+        className="text-sm text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
       >
         ← {VAULT_LABELS[note.vault]}
       </Link>
@@ -70,14 +73,14 @@ export function NoteView() {
             {note.type}
           </span>
         )}
-        {note.date && <span className="text-neutral-400">{note.date}</span>}
+        {note.date && <span className="text-neutral-500 dark:text-neutral-400">{note.date}</span>}
         {note.active && (
           <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
             active
           </span>
         )}
         {note.tags.map((t) => (
-          <span key={t} className="text-neutral-400">
+          <span key={t} className="text-neutral-500 dark:text-neutral-400">
             #{t}
           </span>
         ))}

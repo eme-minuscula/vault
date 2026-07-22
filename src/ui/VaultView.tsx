@@ -18,16 +18,16 @@ export function VaultView() {
     <div>
       <Link
         to="/"
-        className="text-sm text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+        className="text-sm text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
       >
         ← Library
       </Link>
       <h1 className="mt-2 text-2xl font-semibold">{VAULT_LABELS[vaultId]}</h1>
 
       {notes === undefined ? (
-        <p className="mt-6 text-sm text-neutral-400">Loading…</p>
+        <p className="mt-6 text-sm text-neutral-500 dark:text-neutral-400">Loading…</p>
       ) : notes.length === 0 ? (
-        <p className="mt-6 text-sm text-neutral-400">No notes here yet.</p>
+        <p className="mt-6 text-sm text-neutral-500 dark:text-neutral-400">No notes here yet.</p>
       ) : (
         <FolderList notes={notes} />
       )}
@@ -48,7 +48,7 @@ function FolderList({ notes }: { notes: NoteRecord[] }) {
     <div className="mt-6 flex flex-col gap-8">
       {folders.map((folder) => (
         <section key={folder}>
-          <h2 className="mb-2 text-xs font-medium tracking-wide text-neutral-400 uppercase">
+          <h2 className="mb-2 text-xs font-medium tracking-wide text-neutral-500 uppercase dark:text-neutral-400">
             {folder || 'Root'}
           </h2>
           <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-900">
@@ -85,7 +85,10 @@ function NoteRow({ note }: { note: NoteRecord }) {
 function NotFound({ label }: { label: string }) {
   return (
     <div>
-      <Link to="/" className="text-sm text-neutral-400 hover:text-neutral-700">
+      <Link
+        to="/"
+        className="text-sm text-neutral-500 hover:text-neutral-700 dark:text-neutral-400"
+      >
         ← Library
       </Link>
       <p className="mt-6 text-neutral-500">{label}.</p>

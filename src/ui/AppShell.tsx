@@ -18,7 +18,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
           <Link
             to="/active"
-            className="text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+            className="text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
           >
             Active
           </Link>
@@ -32,7 +32,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               </span>
             )}
             {syncing && (
-              <span className="hidden text-xs text-neutral-400 sm:inline" aria-live="polite">
+              <span
+                className="hidden text-xs text-neutral-500 sm:inline dark:text-neutral-400"
+                aria-live="polite"
+              >
                 Syncing…
               </span>
             )}
@@ -45,7 +48,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
             <Link
               to="/settings"
-              className="text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+              className="text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
               aria-label="Settings"
             >
               Settings

@@ -22,7 +22,11 @@ export function NoteCard({
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium text-neutral-900 dark:text-neutral-100">{note.title}</span>
-        {showVault && <span className="text-xs text-neutral-400">{VAULT_LABELS[note.vault]}</span>}
+        {showVault && (
+          <span className="text-xs text-neutral-500 dark:text-neutral-400">
+            {VAULT_LABELS[note.vault]}
+          </span>
+        )}
         {note.type && (
           <span className="rounded-full bg-neutral-100 px-1.5 py-0.5 text-[11px] text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
             {note.type}
