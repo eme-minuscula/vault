@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { excerpt, searchNotes, tokenize } from './search';
+import { buildSearchIndex, excerpt, searchIndex, searchNotes, tokenize } from './search';
 import type { NoteRecord } from '../cache/db';
 
 function note(p: Partial<NoteRecord> & { path: string }): NoteRecord {
@@ -79,6 +79,25 @@ describe('searchNotes', () => {
 
   it('is case-insensitive', () => {
     expect(searchNotes(notes, 'AGENDA').length).toBeGreaterThan(0);
+  });
+});
+
+describe('buildSearchIndex + searchIndex', () => {
+  it('gives the same results as searchNotes, reusing one built index', () => {
+    const index = buildSearchIndex(notes);
+    for (const q of ['agenda', 'meeting agenda', 'dinner', '', 'AGENDA']) {
+      expect(searchIndex(index, q).map((h) => h.note.path)).toEqual(
+        searchNotes(notes, q).map((h) => h.note.path),
+      );
+    }
+  });
+
+  it('respects filters against a prebuilt index', () => {
+    const index = buildSearchIndex(notes);
+    expect(searchIndex(index, 'agenda', { vault: 'r' })).toEqual([]);
+    expect(searchIndex(index, '', { activeOnly: true }).map((h) => h.note.path)).toEqual([
+      'm/Today.md',
+    ]);
   });
 });
 

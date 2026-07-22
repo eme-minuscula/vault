@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useNote, useVaultNotes, useVaultAttachments } from '../../state/notes';
 import { stripLeadingH1 } from '../../lib/frontmatter/parse';
-import { findBacklinks, resolveWikiTarget, toResolvable } from '../../lib/vault/links';
+import { buildWikiResolver, findBacklinks, toResolvable } from '../../lib/vault/links';
 import { resolveAttachmentPath } from '../../lib/vault/attachments';
 import { VAULT_LABELS } from '../../lib/vault/path';
 import { vaultHref } from '../../app/routes';
@@ -18,11 +18,13 @@ export function NoteView() {
   const vaultNotes = useVaultNotes(note?.vault);
 
   const resolvable = useMemo(() => toResolvable(vaultNotes ?? []), [vaultNotes]);
+  // Built once per note-set, then reused for every wikilink in the body.
+  const resolver = useMemo(() => buildWikiResolver(resolvable), [resolvable]);
 
   const resolve = useMemo(() => {
     const vault = note?.vault;
-    return (target: string) => (vault ? resolveWikiTarget(target, vault, resolvable) : null);
-  }, [note?.vault, resolvable]);
+    return (target: string) => (vault ? resolver.resolve(target, vault) : null);
+  }, [note?.vault, resolver]);
 
   const attachments = useVaultAttachments(note?.vault);
   const resolveAttachment = useMemo(() => {
