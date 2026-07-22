@@ -37,6 +37,18 @@ describe('parseNote', () => {
     expect(p.body.startsWith('\n# Tortilla')).toBe(true);
   });
 
+  it('parses aliases (inline and block, and the singular key)', () => {
+    expect(parseNote('---\naliases: [Al, Ally]\n---\nx').frontmatter.aliases).toEqual([
+      'Al',
+      'Ally',
+    ]);
+    expect(parseNote('---\nalias: Solo\n---\nx').frontmatter.aliases).toEqual(['Solo']);
+    const block = parseNote('---\naliases:\n  - One\n  - Two\ntype: person\n---\nx').frontmatter;
+    expect(block.aliases).toEqual(['One', 'Two']);
+    expect(block.type).toBe('person'); // block list stops at the next key
+    expect(parseNote('---\ntype: note\n---\nx').frontmatter.aliases).toEqual([]);
+  });
+
   it('parses block-list tags', () => {
     const raw = ['---', 'tags:', '  - alpha', '  - beta', '---', 'body'].join('\n');
     const p = parseNote(raw);

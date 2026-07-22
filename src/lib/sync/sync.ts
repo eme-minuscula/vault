@@ -329,6 +329,7 @@ export function toRecord(
     title: parsed.heading ?? filename,
     type: parsed.frontmatter.type,
     tags: parsed.frontmatter.tags,
+    aliases: parsed.frontmatter.aliases,
     active: parsed.frontmatter.active,
     date: parsed.frontmatter.date,
     snippet: parsed.snippet,

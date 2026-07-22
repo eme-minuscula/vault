@@ -12,6 +12,8 @@ export interface NoteRecord {
   title: string; // display title (H1 if present, else filename)
   type: string | null;
   tags: string[];
+  /** Alternative names (Obsidian `aliases:`) a wikilink can resolve to. */
+  aliases: string[];
   active: boolean;
   date: string | null;
   snippet: string;
