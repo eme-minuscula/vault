@@ -2,7 +2,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useVaultNotes } from '../state/notes';
 import { VAULT_LABELS, type VaultId } from '../lib/vault/path';
 import type { NoteRecord } from '../lib/cache/db';
-import { noteHref } from '../app/routes';
+import { notePathname } from '../app/routes';
 
 const VALID: VaultId[] = ['w', 'm', 'r', '_inbox', 'other'];
 
@@ -65,7 +65,7 @@ function FolderList({ notes }: { notes: NoteRecord[] }) {
 function NoteRow({ note }: { note: NoteRecord }) {
   return (
     <li>
-      <a href={noteHref(note.path)} className="block py-3 no-underline">
+      <Link to={notePathname(note.path)} className="block py-3 no-underline">
         <div className="flex items-center gap-2">
           <span className="font-medium text-neutral-900 dark:text-neutral-100">{note.title}</span>
           {note.active && (
@@ -77,7 +77,7 @@ function NoteRow({ note }: { note: NoteRecord }) {
         {note.snippet && (
           <p className="mt-0.5 line-clamp-2 text-sm text-neutral-500">{note.snippet}</p>
         )}
-      </a>
+      </Link>
     </li>
   );
 }

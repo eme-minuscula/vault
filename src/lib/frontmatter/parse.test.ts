@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { parseNote, stripLeadingH1 } from './parse';
+import { splitDoc } from './doc';
 
 describe('parseNote', () => {
+  it('agrees with splitDoc on where frontmatter ends (one boundary definition)', () => {
+    // A closing fence must be followed by a newline or EOF; `---text` is not a
+    // real fence, so the whole thing is body — and parseNote must not disagree
+    // with the lossless splitDoc, or a note could be indexed one way and written
+    // another.
+    const tricky = '---\ntype: note\n---not a fence, still body';
+    expect(parseNote(tricky).rawFrontmatter).toBeNull();
+    expect(parseNote(tricky).body).toBe(tricky);
+    expect(splitDoc(tricky).frontmatter).toBe('');
+  });
+
   it('parses inline tags, type, active and date', () => {
     const raw = [
       '---',

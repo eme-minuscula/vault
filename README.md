@@ -74,3 +74,35 @@ React Router · Zustand · react-markdown + rehype-sanitize (reading) · Milkdow
 
 Supersedes the retired Android app
 [vault-keep](https://github.com/eme-minuscula/vault-keep).
+
+## Working on the code
+
+**Scale it targets.** A single user's personal vault — on the order of a thousand
+notes across three sub-vaults, some image-heavy. Correct trade-offs are those of a
+well-crafted personal tool, not multi-tenant SaaS.
+
+**Sub-vaults.** The repo's top-level folders map to isolated vaults, encoded as the
+`VaultId` union in `src/lib/vault/path.ts`: `w/` (work), `m/` (personal), `r/`
+(cooking), plus `_inbox` (unfiled captures) and `other`. Isolation is load-bearing —
+wikilinks and attachments never resolve across vaults.
+
+**Layering** (imports point downward):
+
+- `src/lib/` — pure logic and IO, framework-free: the GitHub client, sync engine,
+  IndexedDB cache (Dexie), frontmatter/markdown/search/link/attachment helpers.
+  Functions here take their dependencies (client, db) as explicit arguments.
+- `src/state/` — Zustand stores and React hooks (`useLiveQuery` wrappers) that bind
+  `lib/` to the UI. No business logic beyond wiring.
+- `src/ui/` — components. Navigate with React Router `<Link>`; the one exception is
+  the markdown renderer, which needs string hrefs (`noteHref`).
+
+**Invariants pinned by tests** — change these deliberately, and keep the tests green:
+byte-lossless note round-trip (`frontmatter/doc.ts`, `sync/toRecord.test.ts`), vault
+isolation (`vault/links.ts`, `vault/attachments.ts`), token confinement to
+`api.github.com` (`github/client.ts`), the mid-edit update guard (`state/editorGuard.ts`),
+and offline-outbox integrity (`vault/mutations.ts`).
+
+**Deliberate trade-offs** (decisions, not bugs): the visual editor may normalize
+markdown formatting on save, so notes using extended Obsidian syntax open in raw mode;
+wikilinks resolve by filename only (not title/alias yet); external `http(s)` images in
+notes aren't loaded (the CSP blocks them, so a private note can't beacon out).

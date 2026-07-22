@@ -1,5 +1,6 @@
+import { Link } from 'react-router-dom';
 import { pathMeta } from '../../lib/vault/path';
-import { noteHref } from '../../app/routes';
+import { notePathname } from '../../app/routes';
 
 /** "Linked from" — notes that wikilink to the current one. */
 export function Backlinks({ paths }: { paths: string[] }) {
@@ -12,12 +13,12 @@ export function Backlinks({ paths }: { paths: string[] }) {
       <ul className="mt-3 flex flex-col gap-1.5">
         {paths.map((p) => (
           <li key={p}>
-            <a
-              href={noteHref(p)}
+            <Link
+              to={notePathname(p)}
               className="text-sm text-sky-700 no-underline hover:underline dark:text-sky-400"
             >
               {pathMeta(p).filename}
-            </a>
+            </Link>
           </li>
         ))}
       </ul>
