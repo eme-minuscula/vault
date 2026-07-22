@@ -92,6 +92,13 @@ export interface MetaRecord {
 
 const DB_NAME = 'vault-cache';
 
+/**
+ * Thrown by {@link deleteDatabase} when another open tab holds the database and
+ * the delete can't complete. Exported so the UI maps it to a message without
+ * duplicating the string.
+ */
+export const DB_DELETE_BLOCKED = 'DB_DELETE_BLOCKED';
+
 export class VaultDb extends Dexie {
   notes!: EntityTable<NoteRecord, 'path'>;
   meta!: EntityTable<MetaRecord, 'key'>;
@@ -235,10 +242,13 @@ export async function deleteDatabase(): Promise<void> {
   // the delete neither resolves nor rejects. Race a timeout so the caller can
   // tell the user to close other tabs instead of hanging with no feedback. The
   // pending delete still completes on its own once the other tab goes away.
+  const deletion = Dexie.delete(DB_NAME);
+  // If the timeout wins, `deletion` is still pending (it completes once the other
+  // tab closes) or may later reject; swallow that so it can't become an unhandled
+  // rejection after we've already returned.
+  deletion.catch(() => {});
   await Promise.race([
-    Dexie.delete(DB_NAME),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('DB_DELETE_BLOCKED')), 3000),
-    ),
+    deletion,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(DB_DELETE_BLOCKED)), 3000)),
   ]);
 }

@@ -79,7 +79,7 @@ export function UpdatePrompt() {
         <button
           onClick={() => setNeedRefresh(false)}
           aria-label="Dismiss"
-          className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+          className="text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
         >
           ✕
         </button>

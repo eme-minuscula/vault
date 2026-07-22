@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { db, deleteDatabase } from '../lib/cache/db';
+import { db, deleteDatabase, DB_DELETE_BLOCKED } from '../lib/cache/db';
 import { useSettings } from '../state/settings';
 import { useSync } from '../state/sync';
 import { useTheme, type Theme } from '../state/theme';
@@ -36,7 +36,7 @@ export function Settings() {
     } catch (err) {
       // The only expected failure is another open Vault tab blocking the delete.
       setDisconnectError(
-        err instanceof Error && err.message === 'DB_DELETE_BLOCKED'
+        err instanceof Error && err.message === DB_DELETE_BLOCKED
           ? 'Close any other open Vault tabs, then try again to finish clearing the cache.'
           : 'Could not fully clear the local cache. Your token has been removed.',
       );
