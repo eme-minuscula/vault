@@ -7,7 +7,7 @@ export function Backlinks({ paths }: { paths: string[] }) {
   if (paths.length === 0) return null;
   return (
     <section className="mt-12 border-t border-neutral-200 pt-6 dark:border-neutral-800">
-      <h2 className="text-xs font-medium tracking-wide text-neutral-400 uppercase">
+      <h2 className="text-xs font-medium tracking-wide text-neutral-500 uppercase dark:text-neutral-400">
         Linked from ({paths.length})
       </h2>
       <ul className="mt-3 flex flex-col gap-1.5">

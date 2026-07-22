@@ -231,5 +231,14 @@ export async function deleteDatabase(): Promise<void> {
     instance.close();
     instance = null;
   }
-  await Dexie.delete(DB_NAME);
+  // If another tab still holds the database open, IndexedDB fires `blocked` and
+  // the delete neither resolves nor rejects. Race a timeout so the caller can
+  // tell the user to close other tabs instead of hanging with no feedback. The
+  // pending delete still completes on its own once the other tab goes away.
+  await Promise.race([
+    Dexie.delete(DB_NAME),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('DB_DELETE_BLOCKED')), 3000),
+    ),
+  ]);
 }

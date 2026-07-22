@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useSettings } from '../state/settings';
 import { useSync, type SyncError } from '../state/sync';
+import { resetClock } from './format';
 
 /** First-run screen: collect the on-device token (and optionally repo config), then sync. */
 export function Onboarding() {
@@ -12,7 +13,9 @@ export function Onboarding() {
 
   return (
     <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center px-6 py-12">
-      <p className="text-sm font-medium tracking-wide text-neutral-400 uppercase">Vault</p>
+      <p className="text-sm font-medium tracking-wide text-neutral-500 uppercase dark:text-neutral-400">
+        Vault
+      </p>
       <h1 className="mt-2 text-3xl font-semibold text-balance">Connect your vault</h1>
       <p className="mt-3 leading-relaxed text-neutral-500 dark:text-neutral-400">
         Vault reads your private notes straight from GitHub. Your token stays on this device only —
@@ -39,7 +42,7 @@ export function Onboarding() {
             spellCheck={false}
             className="rounded-lg border border-neutral-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:focus:border-neutral-100"
           />
-          <span className="text-xs text-neutral-400">
+          <span className="text-xs text-neutral-500 dark:text-neutral-400">
             Use a{' '}
             <a
               href="https://github.com/settings/personal-access-tokens"
@@ -56,7 +59,7 @@ export function Onboarding() {
         <button
           type="button"
           onClick={() => setShowAdvanced((v) => !v)}
-          className="self-start text-xs text-neutral-400 underline underline-offset-2 hover:text-neutral-600 dark:hover:text-neutral-200"
+          className="self-start text-xs text-neutral-500 underline underline-offset-2 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-200"
         >
           {showAdvanced ? 'Hide' : 'Advanced'} repository settings
         </button>
@@ -121,7 +124,7 @@ function ProgressBar({ done, total }: { done: number; total: number }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-xs text-neutral-400">
+      <span className="text-xs text-neutral-500 dark:text-neutral-400">
         Fetched {done} of {total} notes
       </span>
     </div>
@@ -161,7 +164,9 @@ function friendlyError(error: SyncError): string {
     case 'not-found':
       return 'Repository or branch not found. Check the owner, repo, and branch.';
     case 'rate-limit':
-      return 'GitHub rate limit reached. Try again a little later.';
+      return error.rateLimitReset
+        ? `GitHub rate limit reached. Try again after ${resetClock(error.rateLimitReset)}.`
+        : 'GitHub rate limit reached. Try again a little later.';
     case 'network':
       return 'Could not reach GitHub. Check your connection and try again.';
     default:

@@ -22,10 +22,11 @@ export interface SearchHit {
   score: number;
 }
 
-const WEIGHT = { title: 5, tag: 3, type: 3, name: 2, body: 1 } as const;
+const WEIGHT = { title: 5, alias: 4, tag: 3, type: 3, name: 2, body: 1 } as const;
 
 interface Haystack {
   title: string;
+  alias: string;
   tags: string;
   type: string;
   name: string;
@@ -51,6 +52,7 @@ export function buildSearchIndex(notes: readonly NoteRecord[]): SearchIndex {
     note,
     hay: {
       title: note.title.toLowerCase(),
+      alias: note.aliases.join(' ').toLowerCase(),
       tags: note.tags.join(' ').toLowerCase(),
       type: (note.type ?? '').toLowerCase(),
       name: note.path.toLowerCase(),
@@ -114,6 +116,7 @@ export function searchNotes(
 
 function scoreTerm(term: string, f: Haystack) {
   if (f.title.includes(term)) return WEIGHT.title;
+  if (f.alias.includes(term)) return WEIGHT.alias;
   if (f.tags.includes(term)) return WEIGHT.tag;
   if (f.type.includes(term)) return WEIGHT.type;
   if (f.name.includes(term)) return WEIGHT.name;

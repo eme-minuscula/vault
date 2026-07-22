@@ -14,12 +14,14 @@ import { VitePWA } from 'vite-plugin-pwa';
 // - style-src allows 'unsafe-inline' because Tailwind/React emit inline styles;
 //   inline *scripts* remain forbidden, which is what matters for XSS.
 // - img-src allows data: so note images fetched as base64 can render inline.
+//   No blob: — attachments render as data: URIs only; a blob: image is never
+//   produced (external/blob srcs are shown as links, not <img>).
 const CSP = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
   "frame-src 'none'",
-  "img-src 'self' data: blob:",
+  "img-src 'self' data:",
   "font-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "script-src 'self'",

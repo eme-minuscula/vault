@@ -9,11 +9,15 @@ export function EditRoute() {
   const path = useParams()['*'] || '';
   const note = useNote(path);
 
-  if (note === undefined) return <p className="text-sm text-neutral-400">Loading…</p>;
+  if (note === undefined)
+    return <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading…</p>;
   if (note === null) {
     return (
       <div>
-        <Link to="/" className="text-sm text-neutral-400 hover:text-neutral-700">
+        <Link
+          to="/"
+          className="text-sm text-neutral-500 hover:text-neutral-700 dark:text-neutral-400"
+        >
           ← Library
         </Link>
         <p className="mt-6 text-neutral-500">This note isn’t in the cache.</p>

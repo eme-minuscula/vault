@@ -169,7 +169,12 @@ export async function flushOutbox(
           sha: op.baseSha,
         });
         const newSha = res.content?.sha;
-        if (newSha) await db.notes.put(toRecord(op.path, newSha, op.text ?? ''));
+        // The contents API always returns content.sha on success; if it somehow
+        // didn't, the note is still `dirty` on its pre-edit sha. Leave the op
+        // queued so a later flush confirms it — deleting it here would let a 304
+        // repair re-fetch the old blob and revert the just-saved edit.
+        if (!newSha) continue;
+        await db.notes.put(toRecord(op.path, newSha, op.text ?? ''));
       } else {
         await client.deleteFile(op.path, { message: op.message, sha: op.baseSha ?? '' });
       }

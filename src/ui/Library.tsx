@@ -56,7 +56,9 @@ export function Library() {
                 <div className="font-medium">{VAULT_LABELS[v]}</div>
                 <div className="mt-0.5 text-sm text-neutral-500">{DESCRIPTIONS[v]}</div>
               </div>
-              <div className="text-sm text-neutral-400 tabular-nums">{counts?.[v] ?? '—'}</div>
+              <div className="text-sm text-neutral-500 tabular-nums dark:text-neutral-400">
+                {counts?.[v] ?? '—'}
+              </div>
             </Link>
           ),
         )}

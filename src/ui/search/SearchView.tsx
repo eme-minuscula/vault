@@ -47,16 +47,16 @@ export function SearchView() {
       </div>
 
       {!hasQuery && !activeOnly ? (
-        <p className="mt-8 text-sm text-neutral-400">
+        <p className="mt-8 text-sm text-neutral-500 dark:text-neutral-400">
           Type in the search box to find notes by title, tag, type, or content.
         </p>
       ) : notes === undefined ? (
-        <p className="mt-8 text-sm text-neutral-400">Loading…</p>
+        <p className="mt-8 text-sm text-neutral-500 dark:text-neutral-400">Loading…</p>
       ) : hits.length === 0 ? (
-        <p className="mt-8 text-sm text-neutral-400">No matches.</p>
+        <p className="mt-8 text-sm text-neutral-500 dark:text-neutral-400">No matches.</p>
       ) : (
         <>
-          <p className="mt-6 text-xs text-neutral-400">
+          <p className="mt-6 text-xs text-neutral-500 dark:text-neutral-400">
             {hits.length} result{hits.length === 1 ? '' : 's'}
           </p>
           <div className="mt-1 flex flex-col">

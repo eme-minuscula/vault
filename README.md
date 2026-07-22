@@ -104,5 +104,7 @@ and offline-outbox integrity (`vault/mutations.ts`).
 
 **Deliberate trade-offs** (decisions, not bugs): the visual editor may normalize
 markdown formatting on save, so notes using extended Obsidian syntax open in raw mode;
-wikilinks resolve by filename only (not title/alias yet); external `http(s)` images in
-notes aren't loaded (the CSP blocks them, so a private note can't beacon out).
+wikilinks resolve within a single vault by filename, then display title, then alias
+(unique matches only — an ambiguous target stays unresolved rather than guessing);
+external `http(s)` images in notes aren't loaded (the CSP blocks them, so a private
+note can't beacon out).

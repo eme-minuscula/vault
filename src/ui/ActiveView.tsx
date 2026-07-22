@@ -14,7 +14,7 @@ export function ActiveView() {
   const notes = useActiveNotes();
 
   if (notes === undefined) {
-    return <p className="text-sm text-neutral-400">Loading…</p>;
+    return <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading…</p>;
   }
 
   return (
@@ -25,7 +25,7 @@ export function ActiveView() {
       </p>
 
       {notes.length === 0 ? (
-        <p className="mt-8 text-sm text-neutral-400">
+        <p className="mt-8 text-sm text-neutral-500 dark:text-neutral-400">
           Nothing active right now. Notes marked <code>active: true</code> show up here.
         </p>
       ) : (
@@ -44,7 +44,7 @@ export function ActiveView() {
 function Group({ vault, notes }: { vault: VaultId; notes: NoteRecord[] }) {
   return (
     <section>
-      <h2 className="mb-1 text-xs font-medium tracking-wide text-neutral-400 uppercase">
+      <h2 className="mb-1 text-xs font-medium tracking-wide text-neutral-500 uppercase dark:text-neutral-400">
         {VAULT_LABELS[vault]} · {notes.length}
       </h2>
       <div className="flex flex-col">
