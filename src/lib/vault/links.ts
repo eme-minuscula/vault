@@ -6,7 +6,7 @@ import { pathMeta, type VaultId } from './path';
  *
  * Targets may look like `Name`, `Name|Label`, `Name#Heading`, `folder/Name`, or
  * an embed `![[Name]]`. Resolution stays *within a single vault* — the vault's
- * isolation is load-bearing, so a link in `w/` never resolves into `m/` or `r/`.
+ * isolation is load-bearing, so a link in one vault never resolves into another (e.g. `w/` → `m/`).
  */
 
 export interface WikiLink {

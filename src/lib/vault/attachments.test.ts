@@ -9,7 +9,7 @@ import {
 
 describe('isImagePath', () => {
   it('matches common image extensions', () => {
-    expect(isImagePath('r/attachments/pic.PNG')).toBe(true);
+    expect(isImagePath('_inbox/attachments/pic.PNG')).toBe(true);
     expect(isImagePath('a/b.jpeg')).toBe(true);
     expect(isImagePath('a/b.md')).toBe(false);
   });
@@ -33,20 +33,22 @@ describe('isExternalSrc', () => {
 });
 
 const atts: ResolvableAttachment[] = [
-  { path: 'r/attachments/tortilla.png', vault: 'r', filename: 'tortilla.png' },
+  { path: '_inbox/attachments/tortilla.png', vault: '_inbox', filename: 'tortilla.png' },
   { path: 'w/Projects/COS/artifacts/diagram.png', vault: 'w', filename: 'diagram.png' },
   { path: 'm/attachments/tortilla.png', vault: 'm', filename: 'tortilla.png' },
 ];
 
 describe('resolveAttachmentPath', () => {
   it('resolves an embed by basename within the vault', () => {
-    expect(resolveAttachmentPath('tortilla.png', 'r', atts)).toBe('r/attachments/tortilla.png');
+    expect(resolveAttachmentPath('tortilla.png', '_inbox', atts)).toBe(
+      '_inbox/attachments/tortilla.png',
+    );
   });
 
   it('stays within the vault (never cross-vault)', () => {
-    // tortilla.png exists in r and m; from r we get the r copy, not m.
+    // tortilla.png exists in _inbox and m; from _inbox we get the _inbox copy, not m.
     expect(resolveAttachmentPath('tortilla.png', 'm', atts)).toBe('m/attachments/tortilla.png');
-    expect(resolveAttachmentPath('diagram.png', 'r', atts)).toBeNull();
+    expect(resolveAttachmentPath('diagram.png', '_inbox', atts)).toBeNull();
   });
 
   it('resolves relative markdown srcs by path suffix', () => {
@@ -60,13 +62,15 @@ describe('resolveAttachmentPath', () => {
 
   it('handles percent-encoded names', () => {
     const enc: ResolvableAttachment[] = [
-      { path: 'r/attachments/café.png', vault: 'r', filename: 'café.png' },
+      { path: '_inbox/attachments/café.png', vault: '_inbox', filename: 'café.png' },
     ];
-    expect(resolveAttachmentPath('caf%C3%A9.png', 'r', enc)).toBe('r/attachments/café.png');
+    expect(resolveAttachmentPath('caf%C3%A9.png', '_inbox', enc)).toBe(
+      '_inbox/attachments/café.png',
+    );
   });
 
   it('returns null for external or missing', () => {
-    expect(resolveAttachmentPath('https://x/y.png', 'r', atts)).toBeNull();
-    expect(resolveAttachmentPath('nope.png', 'r', atts)).toBeNull();
+    expect(resolveAttachmentPath('https://x/y.png', '_inbox', atts)).toBeNull();
+    expect(resolveAttachmentPath('nope.png', '_inbox', atts)).toBeNull();
   });
 });

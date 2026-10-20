@@ -6,17 +6,16 @@ import { vaultHref } from '../app/routes';
 // Inbox is intentionally not a Library card: `_inbox` captures are flagged
 // active, so they surface in the Active view (and search) — a separate Inbox
 // section would just duplicate that.
-const ORDER: VaultId[] = ['w', 'm', 'r', 'other'];
+const ORDER: VaultId[] = ['w', 'm', 'other'];
 
 const DESCRIPTIONS: Record<VaultId, string> = {
   w: 'Work, projects, people, learning',
   m: 'Journal, daily notes, books, travel',
-  r: 'Recipes, menus, cooking notes',
   _inbox: 'Unfiled quick captures',
   other: 'Everything else',
 };
 
-/** Landing page: the three vaults (plus inbox/other) with live counts. */
+/** Landing page: the two vaults (plus inbox/other) with live counts. */
 export function Library() {
   const counts = useVaultCounts();
   const active = useActiveNotes();
@@ -45,23 +44,21 @@ export function Library() {
       )}
 
       <div className="mt-6 grid gap-3">
-        {ORDER.filter((v) => (counts?.[v] ?? 0) > 0 || v === 'w' || v === 'm' || v === 'r').map(
-          (v) => (
-            <Link
-              key={v}
-              to={vaultHref(v).slice(1)}
-              className="group flex items-center justify-between rounded-xl border border-neutral-200 p-4 transition-colors hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:border-neutral-700 dark:hover:bg-neutral-900"
-            >
-              <div>
-                <div className="font-medium">{VAULT_LABELS[v]}</div>
-                <div className="mt-0.5 text-sm text-neutral-500">{DESCRIPTIONS[v]}</div>
-              </div>
-              <div className="text-sm text-neutral-500 tabular-nums dark:text-neutral-400">
-                {counts?.[v] ?? '—'}
-              </div>
-            </Link>
-          ),
-        )}
+        {ORDER.filter((v) => (counts?.[v] ?? 0) > 0 || v === 'w' || v === 'm').map((v) => (
+          <Link
+            key={v}
+            to={vaultHref(v).slice(1)}
+            className="group flex items-center justify-between rounded-xl border border-neutral-200 p-4 transition-colors hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:border-neutral-700 dark:hover:bg-neutral-900"
+          >
+            <div>
+              <div className="font-medium">{VAULT_LABELS[v]}</div>
+              <div className="mt-0.5 text-sm text-neutral-500">{DESCRIPTIONS[v]}</div>
+            </div>
+            <div className="text-sm text-neutral-500 tabular-nums dark:text-neutral-400">
+              {counts?.[v] ?? '—'}
+            </div>
+          </Link>
+        ))}
       </div>
     </div>
   );

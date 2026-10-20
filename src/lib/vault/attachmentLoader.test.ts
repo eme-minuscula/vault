@@ -59,7 +59,7 @@ describe('ensureAttachmentDataUri', () => {
     await db.attachments.put({
       path: 'r/a/pic.png',
       sha: 'shaZ',
-      vault: 'r',
+      vault: 'm',
       filename: 'pic.png',
       updatedAt: 0,
     });

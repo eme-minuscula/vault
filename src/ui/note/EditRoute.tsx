@@ -1,7 +1,8 @@
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useNote } from '../../state/notes';
 import { fullText } from '../../lib/cache/db';
 import { notePathname } from '../../app/routes';
+import { newNoteContext } from '../../lib/vault/newNote';
 import { NoteEditor } from './NoteEditor';
 
 /** Edit an existing note by path. */
@@ -34,7 +35,11 @@ export function EditRoute() {
   );
 }
 
-/** Create a new note. */
+/**
+ * Create a new note. `?in=<repo folder>` (set by the New button from the vault
+ * or note being viewed) preselects the vault and folder.
+ */
 export function NewRoute() {
-  return <NoteEditor create initialPath="" initialText="" backTo="/" />;
+  const [params] = useSearchParams();
+  return <NoteEditor create={newNoteContext(params.get('in') ?? '')} backTo="/" />;
 }

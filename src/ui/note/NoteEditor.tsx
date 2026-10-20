@@ -4,11 +4,13 @@ import { currentClient } from '../../state/client';
 import { db } from '../../lib/cache/db';
 import { saveNoteText } from '../../lib/vault/mutations';
 import { splitDoc } from '../../lib/frontmatter/doc';
+import { composeNewNoteText, planNewNote, type NewNoteTarget } from '../../lib/vault/newNote';
 import { hasExtendedSyntax } from '../../lib/markdown/wysiwyg';
 import { useHoldEditorGuard } from '../../state/editorGuard';
 import { notePathname } from '../../app/routes';
 import { describeError } from '../errors';
 import { WysiwygEditor, type WysiwygHandle } from './WysiwygEditor';
+import { NewNoteFields, type NewNoteValue } from './NewNoteFields';
 
 type Mode = 'wysiwyg' | 'raw';
 
@@ -18,22 +20,33 @@ type Mode = 'wysiwyg' | 'raw';
  *   verbatim. May normalize markdown formatting.
  * - Raw markdown: edits the full text (frontmatter included) — fully lossless,
  *   the source of truth.
+ *
+ * When creating, the path and frontmatter come from the New fields (vault,
+ * folder, title, Active) and both modes edit the body only.
  */
 export function NoteEditor({
-  create = false,
-  initialPath,
-  initialText,
+  create,
+  initialPath = '',
+  initialText = '',
   backTo,
 }: {
-  create?: boolean;
-  initialPath: string;
-  initialText: string;
+  /** Set to create a note; seeds where it goes (e.g. the folder being browsed). */
+  create?: { target: NewNoteTarget; folder: string };
+  initialPath?: string;
+  initialText?: string;
   backTo: string;
 }) {
   const navigate = useNavigate();
   // Block service-worker-driven reloads while this editor is mounted.
   useHoldEditorGuard();
-  const [path, setPath] = useState(initialPath);
+  const [now] = useState(() => new Date());
+  const [fields, setFields] = useState<NewNoteValue>(() => ({
+    target: create?.target ?? '_inbox',
+    folder: create?.folder ?? '',
+    newFolder: false,
+    title: '',
+    active: false,
+  }));
   // Default to Visual, but open notes that use extended Obsidian syntax
   // (callouts, highlights, comments, block refs) in raw mode so a view+save
   // can't silently normalize them.
@@ -41,6 +54,7 @@ export function NoteEditor({
     hasExtendedSyntax(splitDoc(initialText).body) ? 'raw' : 'wysiwyg',
   );
   const [status, setStatus] = useState<'idle' | 'saving'>('idle');
+  const savingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   // Canonical full text for raw mode. In WYSIWYG mode the frontmatter is held
@@ -78,26 +92,44 @@ export function NoteEditor({
       setError('Not connected. Add a token in Settings.');
       return;
     }
-    const cleanPath = normalizePath(path);
-    if (create && !isValidNotePath(cleanPath)) {
-      setError('Enter a path like w/Folder/Title.md');
-      return;
-    }
-    const full = currentFullText();
-    if (!create && full === initialText) {
+    if (savingRef.current) return;
+    let path = initialPath;
+    let full = currentFullText();
+    if (create) {
+      // Same instant as the preview, so the path shown is the path written.
+      const plan = planNewNote({ ...fields, now });
+      if (!plan.path) {
+        setError(plan.problem ?? 'Add a title.');
+        return;
+      }
+      path = plan.path;
+      full = composeNewNoteText(plan.fields, full);
+    } else if (full === initialText) {
       // Nothing changed — skip the write (and the empty commit).
-      void navigate(notePathname(cleanPath), { replace: true });
+      void navigate(notePathname(path), { replace: true });
       return;
     }
+    // Guard synchronously: the duplicate check below awaits, and a second tap
+    // in that gap would otherwise issue a second create.
+    savingRef.current = true;
     setStatus('saving');
     setError(null);
     try {
-      await saveNoteText(client, db(), cleanPath, full, { create });
+      // Case-insensitive: the vault is also checked out on macOS/Windows, where
+      // 'Standup.md' and 'standup.md' would collide.
+      if (create && (await db().notes.where('path').equalsIgnoreCase(path).first())) {
+        setError(`${path} already exists. Pick another title.`);
+        savingRef.current = false;
+        setStatus('idle');
+        return;
+      }
+      await saveNoteText(client, db(), path, full, { create: !!create });
       // Queued-offline still updates the cache optimistically, so navigate either way
       // (the outbox flushes on reconnect).
-      void navigate(notePathname(cleanPath), { replace: true });
+      void navigate(notePathname(path), { replace: true });
     } catch (err) {
       setError(describeError(err));
+      savingRef.current = false;
       setStatus('idle');
     }
   }
@@ -123,20 +155,7 @@ export function NoteEditor({
         </div>
       </div>
 
-      {create && (
-        <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-neutral-500">Path</span>
-          <input
-            type="text"
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            placeholder="w/Folder/Title.md"
-            autoCapitalize="off"
-            spellCheck={false}
-            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 font-mono text-sm outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:focus:border-neutral-100"
-          />
-        </label>
-      )}
+      {create && <NewNoteFields value={fields} onChange={setFields} now={now} />}
 
       {mode === 'wysiwyg' ? (
         <WysiwygEditor key={wysiwygKey} ref={wysiwygRef} defaultBody={wysiwygBody} />
@@ -145,7 +164,7 @@ export function NoteEditor({
           value={text}
           onChange={(e) => setText(e.target.value)}
           spellCheck
-          placeholder={'---\ntype: note\n---\n\n# Title\n\nWrite here…'}
+          placeholder="Start writing…"
           className="min-h-[60vh] w-full resize-y rounded-lg border border-neutral-200 bg-white p-4 font-mono text-sm leading-relaxed outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-950 dark:focus:border-neutral-600"
         />
       )}
@@ -160,9 +179,11 @@ export function NoteEditor({
       )}
 
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        {mode === 'wysiwyg'
-          ? 'Visual editing of the body — formatting may be normalized on save. Frontmatter is preserved; switch to Markdown for exact control.'
-          : 'Editing raw markdown, including frontmatter — exactly what gets committed.'}
+        {create
+          ? 'Type and date are filled in from the folder. In Markdown mode, frontmatter you type yourself replaces them.'
+          : mode === 'wysiwyg'
+            ? 'Visual editing of the body — formatting may be normalized on save. Frontmatter is preserved; switch to Markdown for exact control.'
+            : 'Editing raw markdown, including frontmatter — exactly what gets committed.'}
       </p>
     </div>
   );
@@ -186,18 +207,4 @@ function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => voi
       ))}
     </div>
   );
-}
-
-function normalizePath(path: string): string {
-  // Drop empty and '.' segments so 'w//x' or 'w/./x' become 'w/x'.
-  const clean = path
-    .trim()
-    .split('/')
-    .filter((s) => s !== '' && s !== '.')
-    .join('/');
-  return /\.md$/i.test(clean) || clean === '' ? clean : `${clean}.md`;
-}
-
-function isValidNotePath(path: string): boolean {
-  return /^[^/].*\.md$/i.test(path) && !path.includes('..');
 }

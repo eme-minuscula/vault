@@ -32,3 +32,25 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
+
+/*
+ * Visual editor (Milkdown Crepe). Its theme assumes a wide desktop page
+ * (60px × 120px padding, its own serif/sans fonts and background), which
+ * crushes the text column on a phone. Fit it to the app instead.
+ */
+.milkdown-host .milkdown {
+  --crepe-color-background: transparent;
+  --crepe-font-default: inherit;
+  --crepe-font-title: inherit;
+  min-height: inherit;
+}
+.milkdown-host .milkdown .ProseMirror {
+  /* Extra room on the left for the block drag handle. */
+  padding: 1rem 1rem 1rem 2.5rem;
+  min-height: 60vh;
+}
+@media (min-width: 640px) {
+  .milkdown-host .milkdown .ProseMirror {
+    padding: 1.5rem 3rem 1.5rem 3.5rem;
+  }
+}

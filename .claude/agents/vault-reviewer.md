@@ -15,7 +15,7 @@ separate must-fix from nice-to-have.
 
 ## What you are protecting
 
-- A **private** knowledge vault (work, personal, cooking notes) reached via the
+- A **private** knowledge vault (work and personal notes) reached via the
   **GitHub REST API** using the user's **Personal Access Token**, entered at runtime
   and stored **on-device only**.
 - The app repo is **public** (needed for free GitHub Pages). Therefore **no secret,

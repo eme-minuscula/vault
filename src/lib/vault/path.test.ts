@@ -29,6 +29,9 @@ describe('isExcludedPath', () => {
     expect(isExcludedPath('w/People/Alice.md')).toBe(false);
     expect(isExcludedPath('r/Receipes/Tortilla.md')).toBe(false);
   });
+  it('treats the retired cooking vault as other', () => {
+    expect(pathMeta('r/Receipes/Tortilla.md').vault).toBe('other');
+  });
 });
 
 describe('isMarkdown', () => {

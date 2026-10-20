@@ -4,7 +4,7 @@ import { VAULT_LABELS, type VaultId } from '../lib/vault/path';
 import type { NoteRecord } from '../lib/cache/db';
 import { notePathname } from '../app/routes';
 
-const VALID: VaultId[] = ['w', 'm', 'r', '_inbox', 'other'];
+const VALID: VaultId[] = ['w', 'm', '_inbox', 'other'];
 
 /** Browse one vault: notes grouped by folder. */
 export function VaultView() {
