@@ -3,6 +3,8 @@ import {
   buildWikiResolver,
   extractWikiLinks,
   findBacklinks,
+  linksBrokenByMove,
+  namesake,
   parseWikiTarget,
   resolveWikiTarget,
   type ResolvableNote,
@@ -152,5 +154,72 @@ describe('findBacklinks', () => {
   it('returns empty when nothing links in', () => {
     // Nothing in the corpus links to C.
     expect(findBacklinks('w/C.md', 'w', corpus)).toEqual([]);
+  });
+});
+
+describe('linksBrokenByMove', () => {
+  const corpus = [
+    { path: 'w/People/Alice.md', vault: 'w' as const, filename: 'Alice', title: 'Alice', body: '' },
+    { path: 'w/A.md', vault: 'w' as const, filename: 'A', title: 'A', body: 'see [[Alice]]' },
+    {
+      path: 'w/B.md',
+      vault: 'w' as const,
+      filename: 'B',
+      title: 'B',
+      body: 'see [[People/Alice]]',
+    },
+  ];
+
+  it('a folder move keeps plain [[Name]] links but breaks path-style ones', () => {
+    expect(linksBrokenByMove('w/People/Alice.md', 'w/Team/Alice.md', corpus)).toEqual(['w/B.md']);
+  });
+
+  it('a rename breaks every link', () => {
+    expect(linksBrokenByMove('w/People/Alice.md', 'w/People/Alicia.md', corpus)).toEqual([
+      'w/A.md',
+      'w/B.md',
+    ]);
+  });
+
+  it('a move to another vault breaks every link', () => {
+    expect(linksBrokenByMove('w/People/Alice.md', 'm/People/Alice.md', corpus)).toEqual([
+      'w/A.md',
+      'w/B.md',
+    ]);
+  });
+
+  it('a renamed note keeps its H1 title, so links by title still resolve', () => {
+    const titled = [
+      {
+        path: 'w/alice-smith.md',
+        vault: 'w' as const,
+        filename: 'alice-smith',
+        title: 'Alice',
+        body: '',
+      },
+      { path: 'w/A.md', vault: 'w' as const, filename: 'A', title: 'A', body: 'see [[Alice]]' },
+    ];
+    expect(linksBrokenByMove('w/alice-smith.md', 'w/asmith.md', titled)).toEqual([]);
+  });
+
+  it('accepts precomputed backlinks with the same result', () => {
+    const linkers = findBacklinks('w/People/Alice.md', 'w', corpus);
+    expect(linksBrokenByMove('w/People/Alice.md', 'w/Team/Alice.md', corpus, linkers)).toEqual([
+      'w/B.md',
+    ]);
+  });
+
+  it('a note nobody links to breaks nothing', () => {
+    expect(linksBrokenByMove('w/A.md', 'w/Z.md', corpus)).toEqual([]);
+  });
+});
+
+describe('namesake', () => {
+  const paths = ['w/People/Alice.md', 'w/Old/Bob.md'];
+  it('finds another note with the same filename, ignoring case', () => {
+    expect(namesake('w/Old/alice.md', paths, 'w/Old/Bob.md')).toBe('w/People/Alice.md');
+  });
+  it('ignores the note being moved', () => {
+    expect(namesake('w/New/Bob.md', paths, 'w/Old/Bob.md')).toBeNull();
   });
 });

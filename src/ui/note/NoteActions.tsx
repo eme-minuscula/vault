@@ -4,11 +4,11 @@ import type { NoteRecord } from '../../lib/cache/db';
 import { db } from '../../lib/cache/db';
 import { currentClient } from '../../state/client';
 import { deleteNote, setNoteActive } from '../../lib/vault/mutations';
-import { editPathname, vaultHref } from '../../app/routes';
+import { editPathname, movePathname, vaultHref } from '../../app/routes';
 import { useHoldEditorGuard } from '../../state/editorGuard';
 import { describeError } from '../errors';
 
-/** Edit / active-toggle / delete controls for a note. */
+/** Edit / move / active-toggle / delete controls for a note. */
 export function NoteActions({ note }: { note: NoteRecord }) {
   const navigate = useNavigate();
   const [busy, setBusy] = useState<null | 'active' | 'delete'>(null);
@@ -49,6 +49,9 @@ export function NoteActions({ note }: { note: NoteRecord }) {
     <div className="mt-4 flex flex-wrap items-center gap-2">
       <Link to={editPathname(note.path)} className={btn}>
         Edit
+      </Link>
+      <Link to={movePathname(note.path)} className={btn}>
+        Move
       </Link>
       <button onClick={() => void toggleActive()} disabled={busy !== null} className={btn}>
         {busy === 'active' ? '…' : note.active ? 'Mark inactive' : 'Mark active'}

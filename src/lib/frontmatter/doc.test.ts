@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { replaceBody, setActiveFlag, splitDoc, joinDoc } from './doc';
+import {
+  addFieldIfMissing,
+  removeField,
+  replaceBody,
+  setActiveFlag,
+  splitDoc,
+  joinDoc,
+} from './doc';
 
 describe('splitDoc / joinDoc are lossless', () => {
   const cases: [string, string][] = [
@@ -61,5 +68,39 @@ describe('setActiveFlag', () => {
   it('preserves CRLF newline style', () => {
     const raw = '---\r\ntype: daily\r\nactive: false\r\n---\r\nbody';
     expect(setActiveFlag(raw, true)).toBe('---\r\ntype: daily\r\nactive: true\r\n---\r\nbody');
+  });
+});
+
+describe('addFieldIfMissing', () => {
+  it('inserts after the opening fence, leaving the rest verbatim', () => {
+    expect(addFieldIfMissing('---\nactive: true\n---\nbody', 'type', 'learning')).toBe(
+      '---\ntype: learning\nactive: true\n---\nbody',
+    );
+  });
+  it('never overwrites an existing value', () => {
+    const raw = '---\ntype: idea\n---\nbody';
+    expect(addFieldIfMissing(raw, 'type', 'learning')).toBe(raw);
+  });
+  it('creates a block when there is none, and keeps CRLF', () => {
+    expect(addFieldIfMissing('body', 'type', 'book')).toBe('---\ntype: book\n---\nbody');
+    expect(addFieldIfMissing('---\r\na: 1\r\n---\r\nb', 'type', 'x')).toBe(
+      '---\r\ntype: x\r\na: 1\r\n---\r\nb',
+    );
+  });
+});
+
+describe('removeField', () => {
+  it('removes the line, leaving the rest verbatim', () => {
+    expect(removeField('---\ntype: x\nactive: true\n---\nbody', 'active')).toBe(
+      '---\ntype: x\n---\nbody',
+    );
+  });
+  it('drops the block when it becomes empty', () => {
+    expect(removeField('---\nactive: true\n---\n\nbody', 'active')).toBe('body');
+  });
+  it('is a no-op when the field is absent', () => {
+    const raw = '---\ntype: x\n---\nbody';
+    expect(removeField(raw, 'active')).toBe(raw);
+    expect(removeField('body', 'active')).toBe('body');
   });
 });

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { currentClient } from '../../state/client';
 import { db } from '../../lib/cache/db';
-import { saveNoteText } from '../../lib/vault/mutations';
+import { isPathTaken, saveNoteText } from '../../lib/vault/mutations';
 import { splitDoc } from '../../lib/frontmatter/doc';
 import { composeNewNoteText, planNewNote, type NewNoteTarget } from '../../lib/vault/newNote';
 import { hasExtendedSyntax } from '../../lib/markdown/wysiwyg';
@@ -11,7 +11,7 @@ import { useFolderOptions } from '../../state/notes';
 import { notePathname } from '../../app/routes';
 import { describeError } from '../errors';
 import { WysiwygEditor, type WysiwygHandle } from './WysiwygEditor';
-import { NewNoteFields, type NewNoteValue } from './NewNoteFields';
+import { NoteLocationFields, type NoteLocationValue } from './NoteLocationFields';
 
 type Mode = 'wysiwyg' | 'raw';
 
@@ -43,7 +43,7 @@ export function NoteEditor({
   useHoldEditorGuard();
   // One clock for the preview and the save, so the path shown is the path written.
   const now = useNow(!!create);
-  const [fields, setFields] = useState<NewNoteValue>(() => ({
+  const [fields, setFields] = useState<NoteLocationValue>(() => ({
     target: create?.target ?? '_inbox',
     folder: create?.folder ?? '',
     newFolder: false,
@@ -122,7 +122,7 @@ export function NoteEditor({
     try {
       // Case-insensitive: the vault is also checked out on macOS/Windows, where
       // 'Standup.md' and 'standup.md' would collide.
-      if (create && (await db().notes.where('path').equalsIgnoreCase(path).first())) {
+      if (create && (await isPathTaken(db(), path))) {
         setError(`${path} already exists. Pick another title.`);
         savingRef.current = false;
         setStatus('idle');
@@ -160,7 +160,15 @@ export function NoteEditor({
         </div>
       </div>
 
-      {create && <NewNoteFields value={fields} onChange={setFields} now={now} folders={folders} />}
+      {create && (
+        <NoteLocationFields
+          action="create"
+          value={fields}
+          onChange={setFields}
+          now={now}
+          folders={folders}
+        />
+      )}
 
       {mode === 'wysiwyg' ? (
         <WysiwygEditor key={wysiwygKey} ref={wysiwygRef} defaultBody={wysiwygBody} />

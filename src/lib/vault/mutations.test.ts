@@ -3,7 +3,16 @@ import { VaultDb, type NoteRecord } from '../cache/db';
 import { GitHubError } from '../github/errors';
 import type { GitHubClient } from '../github/client';
 import type { ContentResponse, WriteResponse } from '../github/types';
-import { deleteNote, flushOutbox, saveNoteText, setNoteActive } from './mutations';
+import {
+  deleteNote,
+  flushOutbox,
+  isPathTaken,
+  moveNote,
+  MoveIncompleteError,
+  MoveSourceChangedError,
+  saveNoteText,
+  setNoteActive,
+} from './mutations';
 
 class FakeClient {
   putCalls: { path: string; text: string; sha?: string }[] = [];
@@ -325,5 +334,127 @@ describe('flushOutbox', () => {
     expect(result.flushed).toBe(0);
     expect(result.remaining).toBe(1);
     expect(result.error?.kind).toBe('conflict');
+  });
+});
+
+describe('moveNote', () => {
+  /** A fake whose remote copy of `path` has blob sha `sha` (what the sha check reads). */
+  function remoteHas(fake: FakeClient, path: string, sha: string) {
+    fake.getContent = (p) =>
+      p === path
+        ? Promise.resolve({ sha, content: '', encoding: 'base64' } as ContentResponse)
+        : Promise.reject(new GitHubError('not-found', 'missing', 404));
+  }
+
+  it('creates the new path, then deletes the old one', async () => {
+    await seed('_inbox/idea.md', '---\nactive: true\n---\nhi', 'blob1');
+    const fake = new FakeClient();
+    remoteHas(fake, '_inbox/idea.md', 'blob1');
+    const res = await moveNote(
+      asClient(fake),
+      db,
+      '_inbox/idea.md',
+      'w/PrOps/idea.md',
+      'hi',
+      'blob1',
+    );
+    expect(res.queued).toBe(false);
+    expect(fake.putCalls).toEqual([{ path: 'w/PrOps/idea.md', text: 'hi', sha: undefined }]);
+    expect(fake.deleteCalls).toEqual([{ path: '_inbox/idea.md', sha: 'blob1' }]);
+    expect(await db.notes.get('_inbox/idea.md')).toBeUndefined();
+    expect((await db.notes.get('w/PrOps/idea.md'))?.body).toBe('hi');
+  });
+
+  it('writes nothing when the original changed on GitHub', async () => {
+    await seed('w/A.md', 'a', 'blob1');
+    const fake = new FakeClient();
+    remoteHas(fake, 'w/A.md', 'blob2'); // edited elsewhere since the last sync
+    await expect(
+      moveNote(asClient(fake), db, 'w/A.md', 'w/B.md', 'a', 'blob1'),
+    ).rejects.toBeInstanceOf(MoveSourceChangedError);
+    expect(fake.putCalls).toEqual([]);
+    expect(fake.deleteCalls).toEqual([]);
+  });
+
+  it('writes nothing while the original has queued writes', async () => {
+    await seed('w/A.md', 'a', 'blob1');
+    await db.outbox.add({ op: 'put', path: 'w/A.md', message: 'm', text: 'a2', createdAt: 1 });
+    const fake = new FakeClient();
+    remoteHas(fake, 'w/A.md', 'blob1');
+    await expect(
+      moveNote(asClient(fake), db, 'w/A.md', 'w/B.md', 'a', 'blob1'),
+    ).rejects.toBeInstanceOf(MoveSourceChangedError);
+    expect(fake.putCalls).toEqual([]);
+  });
+
+  it('writes nothing when the cache moved on since the text was read', async () => {
+    await seed('w/A.md', 'a2', 'blob2'); // a sync refreshed the note after the screen opened
+    const fake = new FakeClient();
+    remoteHas(fake, 'w/A.md', 'blob2');
+    await expect(
+      moveNote(asClient(fake), db, 'w/A.md', 'w/B.md', 'a', 'blob1'),
+    ).rejects.toBeInstanceOf(MoveSourceChangedError);
+    expect(fake.putCalls).toEqual([]);
+  });
+
+  it('never deletes the original when the create fails', async () => {
+    await seed('w/A.md', 'a', 'blob1');
+    const fake = new FakeClient();
+    remoteHas(fake, 'w/A.md', 'blob1');
+    fake.nextError = new GitHubError('auth', 'denied', 401);
+    await expect(moveNote(asClient(fake), db, 'w/A.md', 'w/B.md', 'a', 'blob1')).rejects.toThrow();
+    expect(fake.deleteCalls).toEqual([]);
+    expect(await db.notes.get('w/A.md')).toBeDefined();
+    expect(await db.notes.get('w/B.md')).toBeUndefined();
+  });
+
+  it('offline at the create, cancels it: nothing moved, nothing queued', async () => {
+    await seed('w/A.md', 'a', 'blob1');
+    const fake = new FakeClient();
+    remoteHas(fake, 'w/A.md', 'blob1');
+    fake.nextError = net();
+    await expect(
+      moveNote(asClient(fake), db, 'w/A.md', 'w/B.md', 'a', 'blob1'),
+    ).rejects.toMatchObject({
+      kind: 'network',
+    });
+    expect(fake.deleteCalls).toEqual([]);
+    expect(await db.outbox.count()).toBe(0);
+    expect(await db.notes.get('w/A.md')).toBeDefined();
+    expect(await db.notes.get('w/B.md')).toBeUndefined();
+  });
+
+  it('offline at the delete, queues only the delete (its create is on GitHub)', async () => {
+    await seed('w/A.md', 'a', 'blob1');
+    const fake = new FakeClient();
+    remoteHas(fake, 'w/A.md', 'blob1');
+    fake.deleteFile = () => Promise.reject(net());
+    const res = await moveNote(asClient(fake), db, 'w/A.md', 'w/B.md', 'a', 'blob1');
+    expect(res.queued).toBe(true);
+    expect(fake.putCalls.map((c) => c.path)).toEqual(['w/B.md']);
+    const ops = await db.outbox.toArray();
+    expect(ops.map((o) => [o.op, o.path])).toEqual([['delete', 'w/A.md']]);
+  });
+
+  it('reports a duplicate when the delete fails after the create', async () => {
+    await seed('w/A.md', 'a', 'blob1');
+    const fake = new FakeClient();
+    remoteHas(fake, 'w/A.md', 'blob1');
+    fake.deleteFile = () => Promise.reject(new GitHubError('conflict', 'changed', 409));
+    await expect(
+      moveNote(asClient(fake), db, 'w/A.md', 'w/B.md', 'a', 'blob1'),
+    ).rejects.toBeInstanceOf(MoveIncompleteError);
+    // Both copies exist: nothing was lost.
+    expect(await db.notes.get('w/A.md')).toBeDefined();
+    expect(await db.notes.get('w/B.md')).toBeDefined();
+  });
+});
+
+describe('isPathTaken', () => {
+  it('matches ignoring case, except the given path', async () => {
+    await seed('w/PrOps/Standup.md', 'x');
+    expect(await isPathTaken(db, 'w/props/standup.md')).toBe(true);
+    expect(await isPathTaken(db, 'w/PrOps/standup.md', 'w/PrOps/Standup.md')).toBe(false);
+    expect(await isPathTaken(db, 'w/PrOps/Other.md')).toBe(false);
   });
 });

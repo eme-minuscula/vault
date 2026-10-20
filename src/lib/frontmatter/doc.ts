@@ -63,3 +63,38 @@ export function setActiveFlag(raw: string, active: boolean): string {
 
   return joinDoc(lines.join(eol), body);
 }
+
+/**
+ * Add `key: value` to the frontmatter when the key is absent, preserving the
+ * rest of the document verbatim; an existing value is never overwritten.
+ * Used when a moved note gains its new folder's `type:`. `key` must be a plain
+ * YAML key and `value` already serialised (the caller controls both).
+ */
+export function addFieldIfMissing(raw: string, key: string, value: string): string {
+  const { frontmatter, body } = splitDoc(raw);
+  if (frontmatter === '') return `---\n${key}: ${value}\n---\n${raw}`;
+
+  const eol = frontmatter.includes('\r\n') ? '\r\n' : '\n';
+  const lines = frontmatter.split(/\r?\n/);
+  if (lines.some((l) => l.startsWith(`${key}:`) || l.startsWith(`${key} :`))) return raw;
+  lines.splice(1, 0, `${key}: ${value}`);
+  return joinDoc(lines.join(eol), body);
+}
+
+/**
+ * Remove a top-level `key:` line from the frontmatter, preserving the rest
+ * verbatim. When the block ends up empty it is dropped, along with one blank
+ * line right after it. Only single-line
+ * fields are supported (the caller uses it for `active`).
+ */
+export function removeField(raw: string, key: string): string {
+  const { frontmatter, body } = splitDoc(raw);
+  if (frontmatter === '') return raw;
+  const eol = frontmatter.includes('\r\n') ? '\r\n' : '\n';
+  const lines = frontmatter.split(/\r?\n/);
+  const kept = lines.filter((l, i) => i === 0 || !new RegExp(`^${key}\\s*:`).test(l));
+  if (kept.length === lines.length) return raw;
+  // Only the two fences (plus the trailing '' from the final newline) remain.
+  if (kept.filter((l) => l !== '').length === 2) return body.replace(/^\r?\n/, '');
+  return joinDoc(kept.join(eol), body);
+}

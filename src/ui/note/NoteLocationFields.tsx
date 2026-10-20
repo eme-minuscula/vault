@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef } from 'react';
 import { planNewNote, titleFallback, type NewNoteTarget } from '../../lib/vault/newNote';
 
-export interface NewNoteValue {
+export interface NoteLocationValue {
   target: NewNoteTarget;
   /** Folder relative to the vault root ('' = root). */
   folder: string;
@@ -19,20 +19,27 @@ const TARGETS: { id: NewNoteTarget; label: string; hint: string }[] = [
 
 const NEW_FOLDER = '\u0000new';
 
-/** Destination, title and Active flag for a note being created. */
-export function NewNoteFields({
+/**
+ * Destination (vault, folder), title and Active flag for a note being created
+ * or moved, with a preview of the resulting path. On `move` only the labels and
+ * the preview differ (the preview names the `type:` added if missing, see
+ * composeMovedText); the caller seeds the fields with the note's location.
+ */
+export function NoteLocationFields({
+  action,
   value,
   onChange,
   now,
   folders: options,
 }: {
-  value: NewNoteValue;
-  onChange: (next: NewNoteValue) => void;
+  action: 'create' | 'move';
+  value: NoteLocationValue;
+  onChange: (next: NoteLocationValue) => void;
   now: Date;
   /** Existing folders of the chosen vault (undefined while loading). */
   folders: string[] | undefined;
 }) {
-  const set = (patch: Partial<NewNoteValue>) => onChange({ ...value, ...patch });
+  const set = (patch: Partial<NoteLocationValue>) => onChange({ ...value, ...patch });
   const titleRef = useRef<HTMLInputElement>(null);
   const folderId = useId();
   const activeId = useId();
@@ -42,11 +49,21 @@ export function NewNoteFields({
 
   const plan = planNewNote({ ...value, now, knownFolders: options });
   const fallback = titleFallback(value.target, value.folder, now);
-  const fm = plan.fields.map(([k, v]) => `${k}: ${v}`).join(', ');
+  const fm =
+    action === 'create'
+      ? plan.fields.map(([k, v]) => `${k}: ${v}`).join(', ')
+      : plan.fields
+          .filter(([k]) => k === 'type')
+          .map(([, v]) => `adds type: ${v} if missing`)
+          .join('');
 
   return (
     <div className="flex flex-col gap-4">
-      <div role="group" aria-label="Where to save" className="flex flex-wrap gap-2">
+      <div
+        role="group"
+        aria-label={action === 'create' ? 'Where to save' : 'Where to move'}
+        className="flex flex-wrap gap-2"
+      >
         {TARGETS.map((t) => (
           <button
             key={t.id}
@@ -150,7 +167,8 @@ export function NewNoteFields({
       <p className="text-xs break-all text-neutral-500 dark:text-neutral-400">
         {plan.path ? (
           <>
-            Saves to <span className="font-mono">{plan.path}</span>
+            {action === 'create' ? 'Saves to' : 'Moves to'}{' '}
+            <span className="font-mono">{plan.path}</span>
           </>
         ) : (
           plan.problem

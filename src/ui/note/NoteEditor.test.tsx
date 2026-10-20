@@ -10,7 +10,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  */
 
 const saveNoteText = vi.fn();
-vi.mock('../../lib/vault/mutations', () => ({
+vi.mock('../../lib/vault/mutations', async (importActual) => ({
+  ...(await importActual<typeof import('../../lib/vault/mutations')>()),
   saveNoteText: (...args: unknown[]) => saveNoteText(...args) as unknown,
 }));
 vi.mock('../../state/client', () => ({ currentClient: () => ({}) }));

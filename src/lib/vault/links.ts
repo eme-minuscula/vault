@@ -171,3 +171,59 @@ export function findBacklinks(
   }
   return out;
 }
+
+/**
+ * Paths of notes whose wikilinks to `fromPath` would stop resolving to it once
+ * it moves to `toPath`. Resolution is re-run against the corpus as it would be
+ * after the move, so a plain `[[Name]]` that still resolves by filename after a
+ * folder change is not counted; a rename, a path-style link
+ * (`[[Folder/Name]]`) or a move to another vault is. The moved note keeps its
+ * H1 title; a title that was just its filename follows the new filename.
+ *
+ * `linkers` is `findBacklinks(fromPath, …)`. It doesn't depend on `toPath`, so
+ * a caller re-checking on every keystroke passes it in once instead of
+ * re-scanning every note body each time.
+ */
+export function linksBrokenByMove(
+  fromPath: string,
+  toPath: string,
+  corpus: readonly (ResolvableNote & { body: string })[],
+  linkers?: readonly string[],
+): string[] {
+  const source = corpus.find((n) => n.path === fromPath);
+  if (!source) return [];
+  linkers ??= findBacklinks(fromPath, source.vault, corpus);
+  if (linkers.length === 0) return [];
+
+  const to = pathMeta(toPath);
+  const oldName = pathMeta(fromPath).filename;
+  const moved = {
+    ...source,
+    path: toPath,
+    vault: to.vault,
+    filename: to.filename,
+    title: source.title === oldName ? to.filename : source.title,
+  };
+  const before = buildWikiResolver(corpus);
+  const after = buildWikiResolver(corpus.map((n) => (n.path === fromPath ? moved : n)));
+
+  const bodies = new Map(corpus.map((n) => [n.path, n.body]));
+  return linkers.filter((p) =>
+    extractWikiLinks(bodies.get(p) ?? '').some(
+      (l) =>
+        before.resolve(l.target, source.vault) === fromPath &&
+        after.resolve(l.target, source.vault) !== toPath,
+    ),
+  );
+}
+
+/**
+ * Another note in `toPath`'s vault with the same filename (ignoring case), if
+ * any. Two notes sharing a name make `[[Name]]` ambiguous, so links to either
+ * stop resolving. `paths` are repo paths in that vault; `except` is the note
+ * being moved.
+ */
+export function namesake(toPath: string, paths: readonly string[], except: string): string | null {
+  const name = pathMeta(toPath).filename.toLowerCase();
+  return paths.find((p) => p !== except && pathMeta(p).filename.toLowerCase() === name) ?? null;
+}
