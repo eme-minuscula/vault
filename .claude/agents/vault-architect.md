@@ -19,8 +19,8 @@ performance, UX, security posture, documentation, and long-term maintainability.
 ## What the system is (calibrate to this — do not over-engineer)
 
 - A **mobile-first PWA** that is the front end to a **private** GitHub-backed
-  markdown knowledge vault (~730 notes across three isolated sub-vaults: `w/`
-  work, `m/` personal, `r/` cooking).
+  markdown knowledge vault (~730 notes across two isolated sub-vaults, `w/`
+  work and `m/` personal, plus an `_inbox/` for quick captures).
 - **No backend by design.** The static app calls the GitHub REST API directly
   with a fine-grained PAT the user enters at runtime, stored **on-device only**.
   The app repo is **public** (free GitHub Pages); the vault repo is private.

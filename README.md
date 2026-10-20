@@ -68,6 +68,9 @@ React Router · Zustand · react-markdown + rehype-sanitize (reading) · Milkdow
   Active view of in-flight notes.
 - **Write** — create/edit/delete and active-toggle as GitHub commits, with a
   byte-lossless document model and an offline write queue that flushes on reconnect.
+- **Create** — pick Work, Personal or Quick capture (the `_inbox/`), a folder, a title
+  and the Active flag; the path and the folder's frontmatter (`type:`, `date:`) are
+  filled in. New opens in the vault or folder you were browsing.
 - **Edit two ways** — a Notion-style visual editor and raw markdown, toggling per note;
   frontmatter is preserved verbatim and the raw editor is the lossless source of truth.
 - **PWA** — installable, offline reading, light/dark themes, update nudge on new deploys.
@@ -78,13 +81,18 @@ Supersedes the retired Android app
 ## Working on the code
 
 **Scale it targets.** A single user's personal vault — on the order of a thousand
-notes across three sub-vaults, some image-heavy. Correct trade-offs are those of a
+notes across two sub-vaults, some image-heavy. Correct trade-offs are those of a
 well-crafted personal tool, not multi-tenant SaaS.
 
 **Sub-vaults.** The repo's top-level folders map to isolated vaults, encoded as the
-`VaultId` union in `src/lib/vault/path.ts`: `w/` (work), `m/` (personal), `r/`
-(cooking), plus `_inbox` (unfiled captures) and `other`. Isolation is load-bearing —
-wikilinks and attachments never resolve across vaults.
+`VaultId` union in `src/lib/vault/path.ts`: `w/` (work), `m/` (personal), plus
+`_inbox` (unfiled captures) and `other`. Cooking (`r/`) lives in the separate kitch
+repo. Isolation is load-bearing — wikilinks and attachments never resolve across
+vaults.
+
+**New-note schema.** `FOLDER_RULES` in `src/lib/vault/newNote.ts` mirrors the
+frontmatter schema in the vault repo's `w/CLAUDE.md` and `m/CLAUDE.md`. Update it when
+those change; a folder without a rule just gets no `type:`.
 
 **Layering** (imports point downward):
 
@@ -100,7 +108,10 @@ wikilinks and attachments never resolve across vaults.
 byte-lossless note round-trip (`frontmatter/doc.ts`, `sync/toRecord.test.ts`), vault
 isolation (`vault/links.ts`, `vault/attachments.ts`), token confinement to
 `api.github.com` (`github/client.ts`), the mid-edit update guard (`state/editorGuard.ts`),
-and offline-outbox integrity (`vault/mutations.ts`).
+offline-outbox integrity (`vault/mutations.ts`), new notes never landing in a
+dot-folder, as `Creds.md` or `CLAUDE(.local).md`, in the `k/` wiki or in `attachments/`, in any
+casing (`vault/newNote.ts`), and create refusing double taps and case-only duplicates
+(`ui/note/NoteEditor.test.tsx`).
 
 **Deliberate trade-offs** (decisions, not bugs): the visual editor may normalize
 markdown formatting on save, so notes using extended Obsidian syntax open in raw mode;

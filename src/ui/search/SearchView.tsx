@@ -6,7 +6,7 @@ import { VAULT_LABELS, type VaultId } from '../../lib/vault/path';
 import { NoteCard } from '../NoteCard';
 import { highlight } from './highlight';
 
-const VAULT_FILTERS: (VaultId | 'all')[] = ['all', 'w', 'm', 'r'];
+const VAULT_FILTERS: (VaultId | 'all')[] = ['all', 'w', 'm'];
 
 export function SearchView() {
   const [params] = useSearchParams();

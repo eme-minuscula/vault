@@ -3,7 +3,7 @@ import { VAULT_LABELS, type VaultId } from '../lib/vault/path';
 import type { NoteRecord } from '../lib/cache/db';
 import { NoteCard } from './NoteCard';
 
-const ORDER: VaultId[] = ['w', 'm', 'r', '_inbox', 'other'];
+const ORDER: VaultId[] = ['w', 'm', '_inbox', 'other'];
 
 /**
  * Active view — notes flagged `active: true`, i.e. what's in flight right now.

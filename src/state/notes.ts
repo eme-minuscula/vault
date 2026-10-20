@@ -4,6 +4,7 @@ import { db, type NoteRecord } from '../lib/cache/db';
 import type { VaultId } from '../lib/vault/path';
 import type { ResolvableAttachment } from '../lib/vault/attachments';
 import { ensureAttachmentDataUri } from '../lib/vault/attachmentLoader';
+import { folderOptions } from '../lib/vault/newNote';
 import { currentClient } from './client';
 
 /** A single note by path (undefined while loading, null when absent). */
@@ -58,7 +59,7 @@ export function usePendingCount(enabled = true): number {
 /** Per-vault note counts for the library overview. */
 export function useVaultCounts(): Record<VaultId, number> | undefined {
   return useLiveQuery(async () => {
-    const counts: Record<VaultId, number> = { w: 0, m: 0, r: 0, _inbox: 0, other: 0 };
+    const counts: Record<VaultId, number> = { w: 0, m: 0, _inbox: 0, other: 0 };
     await db().notes.each((n) => {
       counts[n.vault] += 1;
     });
@@ -138,4 +139,19 @@ export function useAttachment(path: string | undefined): AttachmentState {
     loading: !!row && !paired && !error,
     error: error || (path !== undefined && row === null),
   };
+}
+
+/**
+ * Folder choices for a new note in one vault. Reads only the primary keys
+ * (paths), not the note bodies: a record's folder is always its path's dirname.
+ */
+export function useFolderOptions(vault: 'w' | 'm' | undefined): string[] | undefined {
+  return useLiveQuery(async () => {
+    if (!vault) return [];
+    const paths = await db().notes.where('vault').equals(vault).primaryKeys();
+    return folderOptions(
+      vault,
+      paths.map((p) => String(p).split('/').slice(0, -1).join('/')),
+    );
+  }, [vault]);
 }

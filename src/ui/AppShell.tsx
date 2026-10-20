@@ -1,13 +1,15 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { useSync } from '../state/sync';
 import { usePendingCount } from '../state/notes';
 import { SearchBar } from './search/SearchBar';
+import { newNoteHref } from '../lib/vault/newNote';
 
 /** Persistent app frame: a slim top bar plus the routed content. Mobile-first. */
 export function AppShell({ children }: { children: ReactNode }) {
   const syncing = useSync((s) => s.status === 'syncing');
   const pending = usePendingCount();
+  const newHref = newNoteHref(useLocation().pathname);
 
   return (
     <div className="min-h-full bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
@@ -41,7 +43,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             )}
             <SearchBar />
             <Link
-              to="/new"
+              to={newHref}
               className="rounded-lg bg-neutral-900 px-2.5 py-1.5 text-xs font-medium text-white hover:opacity-90 dark:bg-white dark:text-neutral-900"
             >
               New

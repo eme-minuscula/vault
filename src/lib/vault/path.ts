@@ -1,8 +1,10 @@
 /** Helpers for interpreting repo-relative vault paths. */
 
-export type VaultId = 'w' | 'm' | 'r' | '_inbox' | 'other';
+export type VaultId = 'w' | 'm' | '_inbox' | 'other';
 
-const KNOWN_VAULTS: readonly VaultId[] = ['w', 'm', 'r', '_inbox'];
+// Cooking (`r/`) is not a vault here (it lives in the kitch repo); a path under
+// it is classed as 'other'.
+const KNOWN_VAULTS: readonly VaultId[] = ['w', 'm', '_inbox'];
 
 export interface PathMeta {
   vault: VaultId;
@@ -42,7 +44,6 @@ export function isExcludedPath(path: string): boolean {
 export const VAULT_LABELS: Record<VaultId, string> = {
   w: 'Work',
   m: 'Personal',
-  r: 'Cooking',
   _inbox: 'Inbox',
   other: 'Other',
 };

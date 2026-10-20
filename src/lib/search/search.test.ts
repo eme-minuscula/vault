@@ -35,9 +35,9 @@ const notes: NoteRecord[] = [
     type: 'learning',
   }),
   note({
-    path: 'r/Tortilla.md',
+    path: '_inbox/Tortilla.md',
     title: 'Tortilla',
-    vault: 'r',
+    vault: '_inbox',
     body: 'eggs and potatoes',
     tags: ['dinner'],
   }),
@@ -63,7 +63,7 @@ describe('searchNotes', () => {
   });
 
   it('matches tags and type', () => {
-    expect(searchNotes(notes, 'dinner').map((h) => h.note.path)).toEqual(['r/Tortilla.md']);
+    expect(searchNotes(notes, 'dinner').map((h) => h.note.path)).toEqual(['_inbox/Tortilla.md']);
     expect(searchNotes(notes, 'learning').map((h) => h.note.path)).toEqual(['w/Agenda.md']);
   });
 
@@ -77,7 +77,7 @@ describe('searchNotes', () => {
   });
 
   it('applies vault and active filters', () => {
-    expect(searchNotes(notes, 'agenda', { vault: 'r' })).toEqual([]);
+    expect(searchNotes(notes, 'agenda', { vault: '_inbox' })).toEqual([]);
     const active = searchNotes(notes, '', { activeOnly: true });
     expect(active.map((h) => h.note.path)).toEqual(['m/Today.md']);
   });
@@ -104,7 +104,7 @@ describe('buildSearchIndex + searchIndex', () => {
 
   it('respects filters against a prebuilt index', () => {
     const index = buildSearchIndex(notes);
-    expect(searchIndex(index, 'agenda', { vault: 'r' })).toEqual([]);
+    expect(searchIndex(index, 'agenda', { vault: '_inbox' })).toEqual([]);
     expect(searchIndex(index, '', { activeOnly: true }).map((h) => h.note.path)).toEqual([
       'm/Today.md',
     ]);

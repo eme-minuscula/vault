@@ -47,7 +47,7 @@ describe('resolveWikiTarget', () => {
   });
 
   it('keeps vaults isolated — never resolves across vaults', () => {
-    expect(resolveWikiTarget('Alice', 'r', notes)).toBeNull();
+    expect(resolveWikiTarget('Alice', '_inbox', notes)).toBeNull();
     // From m, resolves to the m copy, not w.
     expect(resolveWikiTarget('Alice', 'm', notes)).toBe('m/People/Alice.md');
   });
@@ -81,7 +81,7 @@ describe('resolve by title and alias', () => {
       title: 'Communication',
       aliases: ['wk'],
     },
-    { path: 'r/People/person.md', vault: 'r', filename: 'person', title: 'Solo' },
+    { path: '_inbox/People/person.md', vault: '_inbox', filename: 'person', title: 'Solo' },
   ];
 
   it('resolves a link written against a title', () => {
@@ -99,9 +99,9 @@ describe('resolve by title and alias', () => {
   });
 
   it('keeps title/alias resolution within the vault', () => {
-    // 'Wes Kao' is a title, 'WK' an alias — both only in w; from r, neither crosses.
-    expect(resolveWikiTarget('Wes Kao', 'r', rich)).toBeNull();
-    expect(resolveWikiTarget('WK', 'r', rich)).toBeNull();
+    // 'Wes Kao' is a title, 'WK' an alias — both only in w; from _inbox, neither crosses.
+    expect(resolveWikiTarget('Wes Kao', '_inbox', rich)).toBeNull();
+    expect(resolveWikiTarget('WK', '_inbox', rich)).toBeNull();
   });
 
   it('an ambiguous title resolves to nothing', () => {
@@ -116,10 +116,10 @@ describe('resolve by title and alias', () => {
 describe('buildWikiResolver', () => {
   it('matches resolveWikiTarget for every case, from one built index', () => {
     const resolver = buildWikiResolver(notes);
-    const cases: [string, 'w' | 'm' | 'r'][] = [
+    const cases: [string, 'w' | 'm' | '_inbox'][] = [
       ['Alice', 'w'],
       ['Alice', 'm'],
-      ['Alice', 'r'],
+      ['Alice', '_inbox'],
       ['Plan', 'w'],
       ['Projects/COS/Plan', 'w'],
       ['alice.md', 'w'],

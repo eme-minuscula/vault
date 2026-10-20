@@ -64,6 +64,9 @@ export const WysiwygEditor = forwardRef<
           // aliased away in vite.config.ts (see src/styles/no-katex.css), so
           // enabling maths alone would render it with no styles at all.
           features: { [Crepe.Feature.Latex]: false },
+          featureConfigs: {
+            [Crepe.Feature.Placeholder]: { text: 'Start writing…', mode: 'doc' },
+          },
         });
         await crepe.create();
         if (cancelled) {
@@ -98,7 +101,7 @@ export const WysiwygEditor = forwardRef<
   return (
     <div
       ref={rootRef}
-      className="milkdown-host min-h-[60vh] rounded-lg border border-neutral-200 bg-white dark:border-neutral-800"
+      className="milkdown-host min-h-[60vh] rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950"
     />
   );
 });
