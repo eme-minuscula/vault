@@ -6,6 +6,7 @@ import {
   newNoteHref,
   folderOptions,
   frontmatterBlock,
+  matchExistingFolder,
   planNewNote,
   ruleFor,
   titleFallback,
@@ -154,12 +155,15 @@ describe('composeNewNoteText', () => {
     expect(composeNewNoteText([], 'Hi')).toBe('Hi');
   });
 
-  it('keeps hand-typed frontmatter, still forcing active for the inbox', () => {
+  it('keeps hand-typed frontmatter, still applying Active when the plan has it', () => {
     const typed = '---\ntype: idea\n---\nHi';
     expect(composeNewNoteText([['type', 'learning']], typed)).toBe(typed);
-    expect(composeNewNoteText([['active', 'true']], typed)).toBe(
-      '---\nactive: true\ntype: idea\n---\nHi',
-    );
+    const activeTyped = '---\nactive: true\ntype: idea\n---\nHi';
+    // Inbox capture...
+    expect(composeNewNoteText([['active', 'true']], typed)).toBe(activeTyped);
+    // ...and a Work note with the Active switch on.
+    const plan = planNewNote({ target: 'w', folder: 'Learning', title: 'x', active: true, now });
+    expect(composeNewNoteText(plan.fields, typed)).toBe(activeTyped);
   });
 });
 
@@ -181,5 +185,54 @@ describe('newNoteHref / newNoteContext', () => {
     expect(newNoteContext('r/x')).toEqual({ target: '_inbox', folder: '' });
     expect(newNoteContext('m/People')).toEqual({ target: 'm', folder: 'People' });
     expect(newNoteContext('w/k/Topics')).toEqual({ target: 'w', folder: '' });
+  });
+});
+
+describe('case-insensitive folders', () => {
+  const base = { active: false, now };
+
+  it('reserved folders are refused in any casing', () => {
+    expect(planNewNote({ ...base, target: 'w', folder: 'K', title: 'x' }).path).toBeNull();
+    expect(
+      planNewNote({ ...base, target: 'w', folder: 'Attachments', title: 'x' }).path,
+    ).toBeNull();
+  });
+
+  it('a typed case variant reuses the existing folder and its rule', () => {
+    expect(matchExistingFolder('learning/new', ['Learning', 'PrOps'])).toBe('Learning/new');
+    const plan = planNewNote({
+      ...base,
+      target: 'm',
+      folder: 'books',
+      title: 'x',
+      knownFolders: ['Books'],
+    });
+    expect(plan.path).toBe('m/Books/x.md');
+    expect(plan.fields).toEqual([['type', 'book']]);
+    // Even without the folder list, the rule still matches.
+    expect(ruleFor('m', 'books')?.type).toBe('book');
+  });
+
+  it('date-named folders fall back to today in any casing', () => {
+    expect(titleFallback('m', 'dailynotes', now)).toBe('2026-10-20');
+  });
+});
+
+describe('reserved names and length', () => {
+  const base = { target: 'w' as const, folder: 'Projects/X', active: false, now };
+
+  it('refuses CLAUDE.md and CLAUDE.local.md, which Claude Code reads as instructions', () => {
+    expect(planNewNote({ ...base, title: 'CLAUDE' }).path).toBeNull();
+    expect(planNewNote({ ...base, title: 'claude' }).path).toBeNull();
+    expect(planNewNote({ ...base, title: 'CLAUDE.local' }).path).toBeNull();
+    expect(planNewNote({ ...base, title: 'Claude notes' }).path).toBe(
+      'w/Projects/X/Claude notes.md',
+    );
+  });
+
+  it('caps a long title at 200 UTF-8 bytes without splitting a character', () => {
+    const stem = titleToFilename('à'.repeat(150)); // 300 bytes
+    expect(new TextEncoder().encode(stem).length).toBe(200);
+    expect(stem).toBe('à'.repeat(100));
   });
 });

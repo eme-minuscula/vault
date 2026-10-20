@@ -108,8 +108,10 @@ those change; a folder without a rule just gets no `type:`.
 byte-lossless note round-trip (`frontmatter/doc.ts`, `sync/toRecord.test.ts`), vault
 isolation (`vault/links.ts`, `vault/attachments.ts`), token confinement to
 `api.github.com` (`github/client.ts`), the mid-edit update guard (`state/editorGuard.ts`),
-offline-outbox integrity (`vault/mutations.ts`), and new notes never landing in a
-dot-folder, `Creds.md`, the `k/` wiki or `attachments/` (`vault/newNote.ts`).
+offline-outbox integrity (`vault/mutations.ts`), new notes never landing in a
+dot-folder, as `Creds.md` or `CLAUDE(.local).md`, in the `k/` wiki or in `attachments/`, in any
+casing (`vault/newNote.ts`), and create refusing double taps and case-only duplicates
+(`ui/note/NoteEditor.test.tsx`).
 
 **Deliberate trade-offs** (decisions, not bugs): the visual editor may normalize
 markdown formatting on save, so notes using extended Obsidian syntax open in raw mode;

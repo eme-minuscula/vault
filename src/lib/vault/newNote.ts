@@ -35,23 +35,47 @@ export const FOLDER_RULES: readonly FolderRule[] = [
 ];
 
 /** Daily notes are named by date, so an empty title falls back to today. */
-const DATE_NAMED_FOLDERS: readonly string[] = ['m/DailyNotes'];
+const DATE_NAMED_FOLDERS: readonly string[] = ['m/dailynotes'];
+
+function isDateNamed(dir: string): boolean {
+  return DATE_NAMED_FOLDERS.includes(dir.toLowerCase());
+}
 
 /**
  * Folders a new note must not be written to: the derived wiki (`k/`, maintained
  * by Claude) and attachment folders. `folder` is relative to the vault root.
+ * Case-insensitive, because the vault is also checked out on macOS/Windows,
+ * where `K/` is the same directory as `k/`.
  */
 export function isWritableFolder(folder: string): boolean {
-  const segs = folder.split('/');
+  const segs = folder.toLowerCase().split('/');
   return segs[0] !== 'k' && !segs.includes('attachments');
 }
 
-/** Most specific rule for a vault-relative folder, if any. */
+/** Most specific rule for a vault-relative folder (case-insensitive), if any. */
 export function ruleFor(vault: NewNoteTarget, folder: string): FolderRule | undefined {
   if (vault === '_inbox') return undefined;
-  return FOLDER_RULES.filter(
-    (r) => r.vault === vault && (folder === r.folder || folder.startsWith(`${r.folder}/`)),
-  ).sort((a, b) => b.folder.length - a.folder.length)[0];
+  const f = folder.toLowerCase();
+  return FOLDER_RULES.filter((r) => {
+    const rf = r.folder.toLowerCase();
+    return r.vault === vault && (f === rf || f.startsWith(`${rf}/`));
+  }).sort((a, b) => b.folder.length - a.folder.length)[0];
+}
+
+/**
+ * Respell a typed folder with the casing of an existing one, segment by
+ * segment (`learning/new` → `Learning/new` when `Learning` exists). Without
+ * this, a case variant creates a second folder on GitHub that a macOS/Windows
+ * checkout merges into the first, and the folder's frontmatter rule is missed.
+ */
+export function matchExistingFolder(folder: string, known: readonly string[]): string {
+  const byLower = new Map(known.map((k) => [k.toLowerCase(), k]));
+  let out = '';
+  for (const seg of folder.split('/').filter(Boolean)) {
+    const next = out ? `${out}/${seg}` : seg;
+    out = byLower.get(next.toLowerCase()) ?? next;
+  }
+  return out;
 }
 
 /**
@@ -74,19 +98,39 @@ export function folderOptions(vault: 'w' | 'm', noteFolders: Iterable<string>): 
 }
 
 /**
+ * Longest filename stem, in UTF-8 bytes. Filesystems cap a name at 255 bytes
+ * (accented letters take 2); the margin leaves room for `.md` and for git or
+ * Syncthing temp suffixes on the checkouts.
+ */
+const MAX_STEM_BYTES = 200;
+
+/**
  * Turn a typed title into a safe filename stem: drops characters that are
  * illegal in filenames or break Obsidian wikilinks (`/ \ : * ? " < > | # ^ [ ]`),
- * collapses whitespace and strips leading dots.
+ * collapses whitespace, strips leading dots and caps the length.
  */
 export function titleToFilename(title: string): string {
-  return (
-    title
-      .replace(/[/\\:*?"<>|#^[\]]/g, ' ')
-      .replace(/\s+/g, ' ')
-      // Dots and spaces together, so '. .obsidian' can't become a dot-folder.
-      .replace(/^[\s.]+/, '')
-      .trim()
-  );
+  const clean = title
+    .replace(/[/\\:*?"<>|#^[\]]/g, ' ')
+    .replace(/\s+/g, ' ')
+    // Dots and spaces together, so '. .obsidian' can't become a dot-folder.
+    .replace(/^[\s.]+/, '')
+    .trim();
+  return truncateUtf8(clean, MAX_STEM_BYTES).trim();
+}
+
+/** Cut `s` to at most `max` UTF-8 bytes without splitting a character. */
+function truncateUtf8(s: string, max: number): string {
+  const enc = new TextEncoder();
+  if (enc.encode(s).length <= max) return s;
+  let out = '';
+  let bytes = 0;
+  for (const ch of s) {
+    bytes += enc.encode(ch).length;
+    if (bytes > max) break;
+    out += ch;
+  }
+  return out;
 }
 
 /** Clean a typed folder path: each segment sanitised like a title, empties dropped. */
@@ -119,6 +163,8 @@ export interface NewNoteInput {
   title: string;
   active: boolean;
   now: Date;
+  /** Existing vault-relative folders, to reuse their casing (see matchExistingFolder). */
+  knownFolders?: readonly string[];
 }
 
 export interface NewNotePlan {
@@ -133,12 +179,15 @@ export interface NewNotePlan {
 /** Resolve the path and frontmatter for a new note, without writing anything. */
 export function planNewNote(input: NewNoteInput): NewNotePlan {
   const { target, now } = input;
-  const folder = target === '_inbox' ? '' : cleanFolder(input.folder);
+  const folder =
+    target === '_inbox'
+      ? ''
+      : matchExistingFolder(cleanFolder(input.folder), input.knownFolders ?? []);
   const dir = folder ? `${target}/${folder}` : target;
 
   let stem = titleToFilename(input.title);
   if (!stem && target === '_inbox') stem = inboxStamp(now);
-  if (!stem && DATE_NAMED_FOLDERS.includes(dir)) stem = isoDate(now);
+  if (!stem && isDateNamed(dir)) stem = isoDate(now);
 
   const fields: [string, string][] = [];
   const rule = ruleFor(target, folder);
@@ -153,14 +202,18 @@ export function planNewNote(input: NewNoteInput): NewNotePlan {
   if (!stem) return { path: null, problem: 'Add a title.', fields };
   const path = `${dir}/${stem}.md`;
   // Dot-folders and Creds.md are never synced or shown; a note there would vanish.
-  if (isExcludedPath(path)) return { path: null, problem: 'That name isn’t allowed.', fields };
+  // CLAUDE.md and CLAUDE.local.md are read by Claude Code as instructions for their folder.
+  if (isExcludedPath(path) || /^claude(\.local)?$/i.test(stem)) {
+    return { path: null, problem: 'That name isn’t allowed.', fields };
+  }
   return { path, fields };
 }
 
 /**
  * The full text to commit for a new note. The generated frontmatter is
  * prepended, unless the user typed their own block in Markdown mode: theirs
- * wins, but an inbox capture is still forced active.
+ * replaces it, except that `active: true` is still set when the plan has it
+ * (an inbox capture, or the Active switch on).
  */
 export function composeNewNoteText(fields: [string, string][], text: string): string {
   if (splitDoc(text).frontmatter) {
@@ -213,5 +266,5 @@ export function frontmatterBlock(fields: [string, string][]): string {
 export function titleFallback(target: NewNoteTarget, folder: string, now: Date): string | null {
   if (target === '_inbox') return inboxStamp(now);
   const dir = folder ? `${target}/${cleanFolder(folder)}` : target;
-  return DATE_NAMED_FOLDERS.includes(dir) ? isoDate(now) : null;
+  return isDateNamed(dir) ? isoDate(now) : null;
 }

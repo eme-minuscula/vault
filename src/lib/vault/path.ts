@@ -2,8 +2,8 @@
 
 export type VaultId = 'w' | 'm' | '_inbox' | 'other';
 
-// Cooking (`r/`) moved to the kitch repo in October 2026; any leftover path
-// under it falls through to 'other'.
+// Cooking (`r/`) is not a vault here (it lives in the kitch repo); a path under
+// it is classed as 'other'.
 const KNOWN_VAULTS: readonly VaultId[] = ['w', 'm', '_inbox'];
 
 export interface PathMeta {

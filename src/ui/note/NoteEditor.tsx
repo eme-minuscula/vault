@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { currentClient } from '../../state/client';
 import { db } from '../../lib/cache/db';
@@ -7,6 +7,7 @@ import { splitDoc } from '../../lib/frontmatter/doc';
 import { composeNewNoteText, planNewNote, type NewNoteTarget } from '../../lib/vault/newNote';
 import { hasExtendedSyntax } from '../../lib/markdown/wysiwyg';
 import { useHoldEditorGuard } from '../../state/editorGuard';
+import { useFolderOptions } from '../../state/notes';
 import { notePathname } from '../../app/routes';
 import { describeError } from '../errors';
 import { WysiwygEditor, type WysiwygHandle } from './WysiwygEditor';
@@ -21,8 +22,9 @@ type Mode = 'wysiwyg' | 'raw';
  * - Raw markdown: edits the full text (frontmatter included) — fully lossless,
  *   the source of truth.
  *
- * When creating, the path and frontmatter come from the New fields (vault,
- * folder, title, Active) and both modes edit the body only.
+ * When creating, the path and default frontmatter come from the New fields
+ * (vault, folder, title, Active). In Markdown mode a frontmatter block the user
+ * types replaces the generated one; the Active flag is still applied.
  */
 export function NoteEditor({
   create,
@@ -39,7 +41,8 @@ export function NoteEditor({
   const navigate = useNavigate();
   // Block service-worker-driven reloads while this editor is mounted.
   useHoldEditorGuard();
-  const [now] = useState(() => new Date());
+  // One clock for the preview and the save, so the path shown is the path written.
+  const now = useNow(!!create);
   const [fields, setFields] = useState<NewNoteValue>(() => ({
     target: create?.target ?? '_inbox',
     folder: create?.folder ?? '',
@@ -47,6 +50,9 @@ export function NoteEditor({
     title: '',
     active: false,
   }));
+  const folders = useFolderOptions(
+    create && fields.target !== '_inbox' ? fields.target : undefined,
+  );
   // Default to Visual, but open notes that use extended Obsidian syntax
   // (callouts, highlights, comments, block refs) in raw mode so a view+save
   // can't silently normalize them.
@@ -96,8 +102,7 @@ export function NoteEditor({
     let path = initialPath;
     let full = currentFullText();
     if (create) {
-      // Same instant as the preview, so the path shown is the path written.
-      const plan = planNewNote({ ...fields, now });
+      const plan = planNewNote({ ...fields, now, knownFolders: folders });
       if (!plan.path) {
         setError(plan.problem ?? 'Add a title.');
         return;
@@ -155,7 +160,7 @@ export function NoteEditor({
         </div>
       </div>
 
-      {create && <NewNoteFields value={fields} onChange={setFields} now={now} />}
+      {create && <NewNoteFields value={fields} onChange={setFields} now={now} folders={folders} />}
 
       {mode === 'wysiwyg' ? (
         <WysiwygEditor key={wysiwygKey} ref={wysiwygRef} defaultBody={wysiwygBody} />
@@ -180,13 +185,36 @@ export function NoteEditor({
 
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
         {create
-          ? 'Type and date are filled in from the folder. In Markdown mode, frontmatter you type yourself replaces them.'
+          ? 'Type and date are filled in from the folder. In Markdown mode, frontmatter you type yourself replaces them, except Active.'
           : mode === 'wysiwyg'
             ? 'Visual editing of the body — formatting may be normalized on save. Frontmatter is preserved; switch to Markdown for exact control.'
             : 'Editing raw markdown, including frontmatter — exactly what gets committed.'}
       </p>
     </div>
   );
+}
+
+/**
+ * The current time, refreshed every 30 s and when the app returns to the
+ * foreground, so a New screen left open (e.g. overnight in a backgrounded PWA)
+ * doesn't stamp a stale date. Static when `live` is false.
+ */
+function useNow(live: boolean): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    if (!live) return;
+    const tick = () => setNow(new Date());
+    const id = window.setInterval(tick, 30_000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [live]);
+  return now;
 }
 
 function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {

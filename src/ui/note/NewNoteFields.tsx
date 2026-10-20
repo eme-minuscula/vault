@@ -1,5 +1,4 @@
 import { useEffect, useId, useRef } from 'react';
-import { useFolderOptions } from '../../state/notes';
 import { planNewNote, titleFallback, type NewNoteTarget } from '../../lib/vault/newNote';
 
 export interface NewNoteValue {
@@ -25,10 +24,13 @@ export function NewNoteFields({
   value,
   onChange,
   now,
+  folders: options,
 }: {
   value: NewNoteValue;
   onChange: (next: NewNoteValue) => void;
   now: Date;
+  /** Existing folders of the chosen vault (undefined while loading). */
+  folders: string[] | undefined;
 }) {
   const set = (patch: Partial<NewNoteValue>) => onChange({ ...value, ...patch });
   const titleRef = useRef<HTMLInputElement>(null);
@@ -38,10 +40,7 @@ export function NewNoteFields({
 
   useEffect(() => titleRef.current?.focus(), []);
 
-  const vault = value.target === '_inbox' ? undefined : value.target;
-  const options = useFolderOptions(vault);
-
-  const plan = planNewNote({ ...value, now });
+  const plan = planNewNote({ ...value, now, knownFolders: options });
   const fallback = titleFallback(value.target, value.folder, now);
   const fm = plan.fields.map(([k, v]) => `${k}: ${v}`).join(', ');
 
