@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   cleanFolder,
+  composeMovedText,
   composeNewNoteText,
   newNoteContext,
   newNoteHref,
@@ -234,5 +235,31 @@ describe('reserved names and length', () => {
     const stem = titleToFilename('à'.repeat(150)); // 300 bytes
     expect(new TextEncoder().encode(stem).length).toBe(200);
     expect(stem).toBe('à'.repeat(100));
+  });
+});
+
+describe('composeMovedText', () => {
+  it('filing an inbox capture drops active and adds the folder type', () => {
+    const plan = planNewNote({ target: 'w', folder: 'Learning', title: 'x', active: false, now });
+    expect(composeMovedText('---\nactive: true\n---\n\nhi', plan.fields)).toBe(
+      '---\ntype: learning\n---\n\nhi',
+    );
+  });
+
+  it('keeps an existing type and never adds a date', () => {
+    const plan = planNewNote({ target: 'm', folder: 'Journaling', title: 'x', active: true, now });
+    expect(composeMovedText('---\ntype: idea\n---\nhi', plan.fields)).toBe(
+      '---\nactive: true\ntype: idea\n---\nhi',
+    );
+  });
+
+  it('drops an emptied frontmatter block', () => {
+    const plan = planNewNote({ target: 'w', folder: 'PrOps', title: 'x', active: false, now });
+    expect(composeMovedText('---\nactive: true\n---\n\nhi', plan.fields)).toBe('hi');
+  });
+
+  it('leaves a note with nothing to change untouched', () => {
+    const plan = planNewNote({ target: 'w', folder: 'PrOps', title: 'x', active: false, now });
+    expect(composeMovedText('plain body', plan.fields)).toBe('plain body');
   });
 });

@@ -71,6 +71,11 @@ React Router · Zustand · react-markdown + rehype-sanitize (reading) · Milkdow
 - **Create** — pick Work, Personal or Quick capture (the `_inbox/`), a folder, a title
   and the Active flag; the path and the folder's frontmatter (`type:`, `date:`) are
   filled in. New opens in the vault or folder you were browsing.
+- **Move** — move or rename a note with the same picker, including between Personal
+  and Work (it asks first, since the vaults are kept apart, and warns that links and images
+  don't follow). Filing an inbox capture drops its
+  Active flag and adds the folder's `type:` if missing. Warnings show links to the note
+  that would break (they aren't rewritten) and name clashes. Online only.
 - **Edit two ways** — a Notion-style visual editor and raw markdown, toggling per note;
   frontmatter is preserved verbatim and the raw editor is the lossless source of truth.
 - **PWA** — installable, offline reading, light/dark themes, update nudge on new deploys.
@@ -111,7 +116,10 @@ isolation (`vault/links.ts`, `vault/attachments.ts`), token confinement to
 offline-outbox integrity (`vault/mutations.ts`), new notes never landing in a
 dot-folder, as `Creds.md` or `CLAUDE(.local).md`, in the `k/` wiki or in `attachments/`, in any
 casing (`vault/newNote.ts`), and create refusing double taps and case-only duplicates
-(`ui/note/NoteEditor.test.tsx`).
+(`ui/note/NoteEditor.test.tsx`), and a move that only writes when the original
+matches GitHub, creates before it deletes, and leaves nothing queued if the create can't
+reach GitHub, so a failure never loses the note (`vault/mutations.ts`,
+`ui/note/MoveRoute.test.tsx`).
 
 **Deliberate trade-offs** (decisions, not bugs): the visual editor may normalize
 markdown formatting on save, so notes using extended Obsidian syntax open in raw mode;

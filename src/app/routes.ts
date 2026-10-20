@@ -15,6 +15,10 @@ export function editPathname(path: string): string {
   return `/edit/${encodeSegments(path)}`;
 }
 
+export function movePathname(path: string): string {
+  return `/move/${encodeSegments(path)}`;
+}
+
 export function vaultHref(vault: VaultId): string {
   return `#/v/${vault}`;
 }

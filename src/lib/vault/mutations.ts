@@ -129,6 +129,91 @@ export async function deleteNote(
   }
 }
 
+/**
+ * True when a cached note other than `except` already has `path`, ignoring
+ * case: the vault is also checked out on macOS/Windows, where `Standup.md` and
+ * `standup.md` are the same file. Only the local cache is checked; a note not
+ * synced yet (or excluded from sync) isn't seen.
+ */
+export async function isPathTaken(db: VaultDb, path: string, except?: string): Promise<boolean> {
+  const hits = await db.notes.where('path').equalsIgnoreCase(path).primaryKeys();
+  return hits.some((p) => p !== except);
+}
+
+/**
+ * The copy was written but the original couldn't be deleted, so the note now
+ * exists at both paths. `cause` holds the delete's error.
+ */
+export class MoveIncompleteError extends Error {
+  constructor(from: string, to: string, cause: unknown) {
+    super(`Copied to ${to}, but the original at ${from} couldn't be removed.`, { cause });
+    this.name = 'MoveIncompleteError';
+  }
+}
+
+/**
+ * The original isn't in a state that can be moved safely: it has queued
+ * writes, or it no longer matches the version the caller read (`expectedSha`)
+ * or GitHub. Nothing was written.
+ */
+export class MoveSourceChangedError extends Error {
+  constructor(from: string) {
+    super(`${from} has changed since it was opened, or has changes not synced yet.`);
+    this.name = 'MoveSourceChangedError';
+  }
+}
+
+/**
+ * Move (or rename) a note. GitHub's contents API has no move, so this creates
+ * `to` with `text`, then deletes `from`, both under one commit message.
+ *
+ * Online only, by design. The offline outbox can't keep the two steps paired:
+ * a later offline edit of `to` is re-queued behind the delete of `from`, so the
+ * delete could land while the create still fails, leaving the note only on
+ * this device. Hence, in order:
+ * 1. `from` must have no queued writes, and its cached and remote blob sha
+ *    must both equal `expectedSha` (the version `text` was built from);
+ *    otherwise MoveSourceChangedError and nothing is written, so the copy is
+ *    never made from stale text.
+ * 2. The create runs. If it can't reach GitHub it is cancelled (cache and
+ *    outbox) and a `network` error is thrown: nothing moved.
+ * 3. The delete runs only once the create is committed. If it can't reach
+ *    GitHub it is queued, which is safe since its create is already on GitHub.
+ *    Any other failure leaves the note at both paths: MoveIncompleteError.
+ *
+ * Costs one extra API call (the sha check) on top of the create and delete.
+ */
+export async function moveNote(
+  client: GitHubClient,
+  db: VaultDb,
+  from: string,
+  to: string,
+  text: string,
+  expectedSha: string,
+): Promise<SaveResult> {
+  const original = await db.notes.get(from);
+  if (!expectedSha || original?.sha !== expectedSha || (await pendingOpIds(db, from)).length > 0) {
+    throw new MoveSourceChangedError(from);
+  }
+  const remote = await client.getContent(from);
+  if (remote.sha !== expectedSha) throw new MoveSourceChangedError(from);
+
+  const message = `vault: move ${from} → ${to}`;
+  const created = await saveNoteText(client, db, to, text, { create: true, message });
+  if (created.queued) {
+    // `to` didn't exist before (the caller checks), so every op and the cache
+    // record for it are this create's.
+    await db.outbox.where('path').equals(to).delete();
+    await db.notes.delete(to);
+    throw new GitHubError('network', 'offline');
+  }
+  try {
+    return await deleteNote(client, db, from, { message });
+  } catch (err) {
+    throw new MoveIncompleteError(from, to, err);
+  }
+}
+
 export async function setNoteActive(
   client: GitHubClient,
   db: VaultDb,

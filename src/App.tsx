@@ -10,6 +10,7 @@ import { VaultView } from './ui/VaultView';
 import { ActiveView } from './ui/ActiveView';
 import { SearchView } from './ui/search/SearchView';
 import { EditRoute, NewRoute } from './ui/note/EditRoute';
+import { MoveRoute } from './ui/note/MoveRoute';
 import { Settings } from './ui/Settings';
 import { UpdatePrompt } from './ui/UpdatePrompt';
 
@@ -76,6 +77,7 @@ export function App() {
               <Route path="/active" element={<ActiveView />} />
               <Route path="/new" element={<NewRoute />} />
               <Route path="/edit/*" element={<EditRoute />} />
+              <Route path="/move/*" element={<MoveRoute />} />
               <Route path="/v/:vault" element={<VaultView />} />
               <Route
                 path="/note/*"

@@ -8,7 +8,7 @@
  * FOLDER_RULES; a folder with no rule simply gets no `type:`.
  */
 
-import { setActiveFlag, splitDoc } from '../frontmatter/doc';
+import { addFieldIfMissing, removeField, setActiveFlag, splitDoc } from '../frontmatter/doc';
 import { isExcludedPath } from './path';
 
 /** Where the New screen can write: the two vaults, or the capture inbox. */
@@ -220,6 +220,23 @@ export function composeNewNoteText(fields: [string, string][], text: string): st
     return fields.some(([k]) => k === 'active') ? setActiveFlag(text, true) : text;
   }
   return fields.length > 0 ? `${frontmatterBlock(fields)}\n${text}` : text;
+}
+
+/**
+ * The text of a note after a move. Only two fields are touched, the rest stays
+ * byte-for-byte (except that a frontmatter block left empty is removed, with
+ * the blank line after it): `active` follows the plan (set when present, the field removed
+ * when not, so filing an inbox capture drops it as /drain does), and the
+ * destination folder's `type:` is
+ * added only if the note has none. `date:` is never added — the move date
+ * isn't the note's date.
+ */
+export function composeMovedText(raw: string, fields: [string, string][]): string {
+  const type = fields.find(([k]) => k === 'type');
+  const typed = type ? addFieldIfMissing(raw, 'type', type[1]) : raw;
+  return fields.some(([k]) => k === 'active')
+    ? setActiveFlag(typed, true)
+    : removeField(typed, 'active');
 }
 
 /**

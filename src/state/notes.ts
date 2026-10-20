@@ -155,3 +155,32 @@ export function useFolderOptions(vault: 'w' | 'm' | undefined): string[] | undef
     );
   }, [vault]);
 }
+
+/**
+ * A note read once per `path` (undefined while loading, null when absent).
+ * Unlike useNote it doesn't follow cache writes, so a screen that changes the
+ * note (Move deletes it optimistically) keeps rendering while it works.
+ */
+export function useNoteSnapshot(path: string): NoteRecord | null | undefined {
+  const [state, setState] = useState<{ path: string; note: NoteRecord | null } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void db()
+      .notes.get(path)
+      .then((note) => {
+        if (!cancelled) setState({ path, note: note ?? null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
+  return state?.path === path ? state.note : undefined;
+}
+
+/** Repo paths of every note in one vault (primary keys only, no bodies). */
+export function useVaultPaths(vault: VaultId | undefined): string[] | undefined {
+  return useLiveQuery(async () => {
+    if (!vault) return [];
+    return (await db().notes.where('vault').equals(vault).primaryKeys()).map(String);
+  }, [vault]);
+}
